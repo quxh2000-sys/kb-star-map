@@ -322,8 +322,12 @@ globalThis.KBStarGraph = globalThis.KBStarGraph || {};
   document.getElementById("zoomOut").addEventListener("click", () => { state.camera.zoom = core.clamp(state.camera.zoom * .8, .18, 3.5); requestRender(); });
   document.getElementById("resetGraph").addEventListener("click", resetView);
   if (G.localManagement) {
-    document.getElementById("updateState").hidden = false;
-    document.getElementById("checkUpdate").addEventListener("click", () => checkUpdate().catch(error => toast(error.message)));
+    // 防御式：模板若缺这两个元素（例如模板与脚本版本不一致），
+    // 只跳过更新入口，绝不能让异常打断整个星图初始化。
+    const updateState = document.getElementById("updateState");
+    const checkUpdateButton = document.getElementById("checkUpdate");
+    if (updateState) updateState.hidden = false;
+    if (checkUpdateButton) checkUpdateButton.addEventListener("click", () => checkUpdate().catch(error => toast(error.message)));
     requestJson("/api/update", {method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({action: "check"})})
       .then(renderUpdateState)
       .catch(() => { const hint = document.getElementById("updateHint"); if (hint) hint.textContent = "未检查更新"; });
