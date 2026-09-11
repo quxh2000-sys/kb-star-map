@@ -39,7 +39,9 @@ globalThis.KBStarGraph = globalThis.KBStarGraph || {};
       button.classList.toggle("active", active);
       button.setAttribute("aria-selected", String(active));
     });
-    document.getElementById("operationsPanel").hidden = mode !== "operations";
+    // 该面板是早期运营模式的遗留，现模板里已无此元素；加空值保护避免整页中断。
+    const operationsPanel = document.getElementById("operationsPanel");
+    if (operationsPanel) operationsPanel.hidden = mode !== "operations";
     document.getElementById("lensPanel").hidden = mode === "operations";
     if (mode === "operations") {
       selectNode(null);
