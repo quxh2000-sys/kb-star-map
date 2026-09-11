@@ -354,9 +354,9 @@ def make_handler(vault: Path, dashboard_dir: Path, handoff_dir: Path | None = No
                 if path == "/api/update":
                     action = str(payload.get("action") or "check")
                     if action == "check":
-                        self._send_json(200, {"ok": True, **check_for_update(vault)})
+                        self._send_json(200, {"ok": True, **check_for_update()})
                     elif action == "apply":
-                        result = perform_update(vault)
+                        result = perform_update()
                         # 更新后数据已变，让前端提示刷新；HTML 由新版安装器重建。
                         self._send_json(200 if result.get("ok") else 502, result)
                     else:
