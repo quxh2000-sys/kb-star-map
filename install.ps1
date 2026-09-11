@@ -1,12 +1,16 @@
 ﻿# 知识库星图工作台 · 一行安装（Windows）
 #
-#   irm https://gitee.com/quxh20000/kb-star-map/raw/master/install.ps1 | iex
+# 在 PowerShell 里粘贴这一行：
+#   $u='https://gitee.com/quxh20000/kb-star-map/raw/master/install.ps1'; $p="$env:TEMP\kbs-setup.ps1"; irm $u -OutFile $p; powershell -NoProfile -ExecutionPolicy Bypass -File $p
 #
 # 装到 %USERPROFILE%\.kb-star-map，并把 kbs 命令加到用户 PATH。
 # 之后任何目录里执行 kbs 即可；不会往笔记库里塞工具。
 #
 # 注意：本文件必须保存为 UTF-8 带 BOM + CRLF。
-# PowerShell 5.1 会按 ANSI 代码页读取 .ps1，无 BOM 的中文会让整个脚本解析失败。
+#   · PowerShell 5.1 按 ANSI 代码页读 .ps1，无 BOM 的中文会让整个脚本解析失败；
+#   · 但带 BOM 的内容经 irm | iex 传入时，BOM 会被当成首行的一部分而报错。
+#     所以上面的一行命令是"先存成文件再 -File 运行"，两种问题都避开，
+#     顺带也不碰 iex（杀毒软件对 iex 更敏感）。
 $ErrorActionPreference = 'Stop'
 $ManifestUrl = 'https://gitee.com/quxh20000/kb-star-map/raw/master/dist/update.json'
 $Home4Kbs = Join-Path $env:USERPROFILE '.kb-star-map'
