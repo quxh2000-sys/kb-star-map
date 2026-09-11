@@ -25,7 +25,6 @@ HOME_DIR = Path(__file__).resolve().parent
 TOOLS_DIR = HOME_DIR / "tools"
 DASHBOARD_SUBDIR = Path("系统") / "知识库可视化工作台"
 RULES_FILENAME = "资产分类规则.yaml"
-UPDATE_CONFIG_FILENAME = "更新配置.yaml"
 VERSION_STAMP = "工具版本.txt"
 DEFAULT_PORT = 8765
 
@@ -80,21 +79,6 @@ def ensure_vault_ready(vault: Path) -> Path:
             print("[提示] 该库没有分类规则文件，当前按内置默认规则分类。")
             print("       如需按自己的目录分类，可参考工具目录下的 asset-rules.template.yaml 新建一份。")
 
-    config = dashboard / UPDATE_CONFIG_FILENAME
-    if not config.exists():
-        source = HOME_DIR / "update-source.txt"
-        value = ""
-        if source.exists():
-            lines = [x.strip() for x in source.read_text(encoding="utf-8").splitlines()]
-            value = next((x for x in lines if x and not x.startswith("#")), "")
-        manifest = f'manifest_url: "{value}"' if value.startswith("http") else 'manifest_url: ""'
-        repo = "" if value.startswith("http") else value
-        config.write_text(
-            "# 知识库星图工作台 · 更新源配置（只有主动检查更新时才会联网）\n"
-            f'{manifest}\nrepo: "{repo}"\napi_base: "https://api.github.com"\n'
-            "auto_check: false\ntimeout: 15\n",
-            encoding="utf-8",
-        )
     return dashboard
 
 
@@ -130,10 +114,8 @@ def cmd_start(vault_arg: str | None, port: int, launch: bool, build_only: bool) 
 
 
 def cmd_check(vault_arg: str | None) -> int:
-    vault = resolve_vault(vault_arg)
-    ensure_vault_ready(vault)
     kb_update = _load("kb_update")
-    result = kb_update.check_for_update(vault)
+    result = kb_update.check_for_update()
     print(f"当前版本：v{installed_version()}")
     if result.get("error"):
         print(f"检查失败：{result['error']}")
@@ -151,11 +133,9 @@ def cmd_check(vault_arg: str | None) -> int:
 
 
 def cmd_update(vault_arg: str | None) -> int:
-    vault = resolve_vault(vault_arg)
-    ensure_vault_ready(vault)
     kb_update = _load("kb_update")
     print("正在检查并更新…")
-    result = kb_update.perform_update(vault)
+    result = kb_update.perform_update()
     print(result.get("message", ""))
     if result.get("output"):
         print(result["output"][-1200:])

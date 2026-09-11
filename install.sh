@@ -67,6 +67,25 @@ mkdir -p "$HOME_DIR"
 "$PY" -c 'import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])' "$WORK/pkg.zip" "$HOME_DIR"
 "$PY" -c 'import json,sys,datetime,pathlib; pathlib.Path(sys.argv[1]).write_text(json.dumps({"version": sys.argv[2], "installed_at": datetime.datetime.now().isoformat(timespec="seconds")}, ensure_ascii=False), encoding="utf-8")' "$HOME_DIR/installed.json" "$VERSION"
 
+# 更新源配置：属于工具本身，放在安装目录里
+"$PY" - "$HOME_DIR" <<'PYEOF'
+import pathlib, sys
+home = pathlib.Path(sys.argv[1])
+src = home / "update-source.txt"
+value = ""
+if src.exists():
+    lines = [x.strip() for x in src.read_text(encoding="utf-8").splitlines()]
+    value = next((x for x in lines if x and not x.startswith("#")), "")
+manifest = f'manifest_url: "{value}"' if value.startswith("http") else 'manifest_url: ""'
+repo = "" if value.startswith("http") else value
+(home / "更新配置.yaml").write_text(
+    "# 知识库星图工作台 · 更新源（只有主动检查更新时才会联网）\n"
+    f'{manifest}\nrepo: "{repo}"\napi_base: "https://api.github.com"\n'
+    "auto_check: false\ntimeout: 15\n",
+    encoding="utf-8",
+)
+PYEOF
+
 # kbs 启动器
 cat > "$HOME_DIR/kbs" <<'SHEOF'
 #!/bin/bash

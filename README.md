@@ -47,8 +47,6 @@ curl -fsSL https://gitee.com/quxh20000/kb-star-map/raw/master/install.sh | bash
 
 装完会得到一个 `kbs` 命令（工具装在用户目录，不往笔记库里塞任何东西）。
 
-> 公司网络若拦住 PowerShell，也可以用离线包：解压后双击 `1-SETUP-Windows.bat`。
-
 ### 第 1.5 步：跑起来
 
 ```bash

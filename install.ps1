@@ -71,6 +71,25 @@ $stampJson = $stamp | ConvertTo-Json -Compress
 # 必须不带 BOM：kbs.py 用 json 解析，BOM 会让它读不出版本号
 [IO.File]::WriteAllText((Join-Path $Home4Kbs 'installed.json'), $stampJson, (New-Object Text.UTF8Encoding $false))
 
+# ---- 更新源配置（属于工具本身）----
+$srcPath = Join-Path $Home4Kbs 'update-source.txt'
+$value = ''
+if (Test-Path $srcPath) {
+    $lines = Get-Content $srcPath | ForEach-Object { $_.Trim() } | Where-Object { $_ -and -not $_.StartsWith('#') }
+    if ($lines) { $value = $lines[0] }
+}
+$manifestLine = if ($value.StartsWith('http')) { 'manifest_url: "' + $value + '"' } else { 'manifest_url: ""' }
+$repoLine = if ($value.StartsWith('http')) { 'repo: ""' } else { 'repo: "' + $value + '"' }
+$cfg = @(
+    '# 知识库星图工作台 · 更新源（只有主动检查更新时才会联网）',
+    $manifestLine,
+    $repoLine,
+    'api_base: "https://api.github.com"',
+    'auto_check: false',
+    'timeout: 15'
+) -join "`n"
+[IO.File]::WriteAllText((Join-Path $Home4Kbs '更新配置.yaml'), $cfg, (New-Object Text.UTF8Encoding $false))
+
 # ---- kbs 命令 ----
 $shimLines = @(
     '@echo off',
