@@ -59,6 +59,10 @@ if (Test-Path $Home4Kbs) {
     New-Item -ItemType Directory -Force -Path $backup | Out-Null
     Copy-Item (Join-Path $Home4Kbs "tools") $backup -Recurse -Force -ErrorAction SilentlyContinue
     Say ("已备份旧版本到 " + $backup)
+    # 只留最近 3 份，避免长期堆积
+    Get-ChildItem (Join-Path $Home4Kbs '升级备份') -Directory -ErrorAction SilentlyContinue |
+        Sort-Object Name -Descending | Select-Object -Skip 3 |
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
     # 清空后解压：覆盖解压不会删除「新版已移除」的文件，旧残留会一直躺着。
     # 保留用户自己的更新源设置与备份目录。
     Get-ChildItem -Path $Home4Kbs -Force | Where-Object { $_.Name -ne '升级备份' -and $_.Name -ne '更新配置.yaml' } |

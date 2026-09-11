@@ -61,6 +61,8 @@ if [ -d "$HOME_DIR" ]; then
   mkdir -p "$BACKUP"
   cp -R "$HOME_DIR/tools" "$BACKUP/" 2>/dev/null || true
   say "已备份旧版本到 $BACKUP"
+  # 只留最近 3 份，避免长期堆积
+  ls -1dt "$HOME_DIR/升级备份"/*/ 2>/dev/null | tail -n +4 | while read -r old; do rm -rf "$old"; done
   # 清空后解压：覆盖解压不会删除「新版已移除」的文件，旧残留会一直躺着。
   # 保留用户自己的更新源设置与备份目录。
   find "$HOME_DIR" -mindepth 1 -maxdepth 1 \
