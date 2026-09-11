@@ -93,9 +93,28 @@ def config_path(vault: Path) -> Path:
     return vault / DASHBOARD_SUBDIR / CONFIG_FILENAME
 
 
+def install_root() -> Path:
+    """工具安装根目录。
+
+    home 模式：~/.kb-star-map/tools/kb_update.py → 根目录是 tools 的父目录
+    vault 模式：<库>/系统/工作流/工具脚本/kb_update.py → 根目录就是脚本所在目录
+    """
+    tools = Path(__file__).resolve().parent
+    if tools.name == "tools" and (tools.parent / MANIFEST_NAME).exists():
+        return tools.parent
+    return tools
+
+
+def is_home_install() -> bool:
+    return install_root() != Path(__file__).resolve().parent
+
+
 def read_installed_version(vault: Path, fallback: str = "未知") -> str:
     """当前版本：优先读安装清单，其次读版本戳。"""
-    manifest = vault / SCRIPTS_SUBDIR / MANIFEST_NAME
+    # 依次尝试：工具自己的安装清单（home 模式）→ 库内安装清单（vault 模式）
+    manifest = install_root() / MANIFEST_NAME
+    if not manifest.exists():
+        manifest = vault / SCRIPTS_SUBDIR / MANIFEST_NAME
     try:
         data = json.loads(manifest.read_text(encoding="utf-8-sig"))
         if isinstance(data, dict) and data.get("version"):
@@ -317,6 +336,30 @@ def apply_update(vault: Path, zip_path: Path) -> dict[str, object]:
         shutil.rmtree(workdir, ignore_errors=True)
 
 
+
+def apply_home_update(zip_path: Path) -> dict[str, object]:
+    """home 模式升级：备份旧 tools，把新包覆盖到安装目录。
+
+    与 vault 模式的区别：这里绝不能去动别人的笔记库——工具在用户目录里。
+    """
+    root = install_root()
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    backup = root / "升级备份" / stamp
+    try:
+        if (root / "tools").is_dir():
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(root / "tools", backup / "tools", dirs_exist_ok=True)
+        workdir = Path(tempfile.mkdtemp(prefix="kb-home-"))
+        try:
+            extract_package(zip_path, workdir)
+            shutil.copytree(workdir, root, dirs_exist_ok=True)
+        finally:
+            shutil.rmtree(workdir, ignore_errors=True)
+        return {"ok": True, "output": f"已更新工具目录 {root}；旧版本备份在 {backup}"}
+    except (OSError, ValueError, zipfile.BadZipFile) as exc:
+        return {"ok": False, "output": f"覆盖安装失败：{exc.__class__.__name__}: {exc}"}
+
+
 def check_for_update(vault: Path) -> dict[str, object]:
     """给界面用的检查结果。任何异常都转成结构化结果，不抛给调用方。"""
     config = load_config(vault)
@@ -375,7 +418,17 @@ def perform_update(vault: Path) -> dict[str, object]:
                 "ok": False,
                 "message": f"校验失败，已中止：期望 sha256 {wanted[:12]}…，实际 {digest[:12]}…",
             }
-        applied = apply_update(vault, archive)
+        # home 模式：工具在用户目录，直接覆盖自身；vault 模式：交给新版安装器
+        applied = apply_home_update(archive) if is_home_install() else apply_update(vault, archive)
+        if applied["ok"] and is_home_install():
+            try:
+                (install_root() / MANIFEST_NAME).write_text(
+                    json.dumps({"version": release.version, "installed_at": time.strftime("%Y-%m-%dT%H:%M:%S")},
+                               ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8",
+                )
+            except OSError:
+                pass
         return {
             "ok": bool(applied["ok"]),
             "from": current,
