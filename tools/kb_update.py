@@ -21,6 +21,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -39,6 +40,10 @@ USER_AGENT = "kb-star-map-updater"
 DEFAULT_TIMEOUT = 15
 MAX_DOWNLOAD_BYTES = 128 * 1024 * 1024
 DIGEST_RE = re.compile(r"sha256[:\s=]+([0-9a-fA-F]{64})")
+# 实测 Windows 上偶发瞬时 TLS 失败（CERTIFICATE_VERIFY_FAILED 立即重试即成功），
+# 网络抖动不该让同事看到一句莫名的"检查失败"。
+RETRY_ATTEMPTS = 3
+RETRY_DELAY = 1.5
 
 # Windows 控制台默认代码页可能表示不了中文，直接 print 会抛 UnicodeEncodeError。
 for _stream in (sys.stdout, sys.stderr):
@@ -116,6 +121,23 @@ def load_config(vault: Path) -> UpdateConfig:
     )
 
 
+
+def _retry(operation, attempts: int = RETRY_ATTEMPTS, delay: float = RETRY_DELAY):
+    """重试瞬时网络/TLS 故障；4xx 是确定答复，不重试。"""
+    last: Exception | None = None
+    for index in range(attempts):
+        try:
+            return operation()
+        except HTTPError as exc:
+            if 400 <= exc.code < 500:
+                raise
+            last = exc
+        except (URLError, OSError) as exc:
+            last = exc
+        if index + 1 < attempts:
+            time.sleep(delay * (index + 1))
+    raise last  # type: ignore[misc]
+
 def parse_version(text: str) -> tuple[int, ...]:
     """'v1.2.3' / '1.2' → (1, 2, 3) / (1, 2)。取不到数字时返回空元组。"""
     numbers = re.findall(r"\d+", str(text))
@@ -135,12 +157,15 @@ def is_newer(candidate: str, current: str) -> bool:
 
 def fetch_latest_release(repo: str, timeout: int = DEFAULT_TIMEOUT, api_base: str = DEFAULT_API_BASE) -> ReleaseInfo:
     """取最新 release。只发一个 GET，不带任何本地信息。"""
-    request = Request(
-        api_base.rstrip("/") + RELEASES_PATH.format(repo=repo),
-        headers={"User-Agent": USER_AGENT, "Accept": "application/vnd.github+json"},
-    )
-    with urlopen(request, timeout=timeout) as response:
-        payload = json.loads(response.read().decode("utf-8"))
+    def _fetch():
+        request = Request(
+            api_base.rstrip("/") + RELEASES_PATH.format(repo=repo),
+            headers={"User-Agent": USER_AGENT, "Accept": "application/vnd.github+json"},
+        )
+        with urlopen(request, timeout=timeout) as response:
+            return json.loads(response.read().decode("utf-8"))
+
+    payload = _retry(_fetch)
     if not isinstance(payload, dict):
         raise ValueError("GitHub 返回的不是一个 release 对象")
     tag = str(payload.get("tag_name") or "").strip()
@@ -159,21 +184,26 @@ def fetch_latest_release(repo: str, timeout: int = DEFAULT_TIMEOUT, api_base: st
 
 
 def download_release(url: str, dest: Path, timeout: int = 60, max_bytes: int = MAX_DOWNLOAD_BYTES) -> Path:
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    request = Request(url, headers={"User-Agent": USER_AGENT})
-    written = 0
-    with urlopen(request, timeout=timeout) as response, dest.open("wb") as handle:
-        while True:
-            chunk = response.read(64 * 1024)
-            if not chunk:
-                break
-            written += len(chunk)
-            if written > max_bytes:
-                handle.close()
-                dest.unlink(missing_ok=True)
-                raise ValueError(f"下载超过上限 {max_bytes // 1024 // 1024} MB，已中止")
-            handle.write(chunk)
-    return dest
+    def _download():
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        request = Request(url, headers={"User-Agent": USER_AGENT})
+        written = 0
+        with urlopen(request, timeout=timeout) as response, dest.open("wb") as handle:
+            while True:
+                chunk = response.read(64 * 1024)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > max_bytes:
+                    raise ValueError(f"下载超过上限 {max_bytes // 1024 // 1024} MB，已中止")
+                handle.write(chunk)
+        return dest
+
+    try:
+        return _retry(_download)
+    except Exception:
+        dest.unlink(missing_ok=True)
+        raise
 
 
 def sha256_of(path: Path) -> str:
