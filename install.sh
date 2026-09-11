@@ -70,7 +70,17 @@ mkdir -p "$HOME_DIR"
 # kbs 启动器
 cat > "$HOME_DIR/kbs" <<'SHEOF'
 #!/bin/bash
-DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# 安装器会把本脚本软链到 ~/.local/bin/kbs。通过软链调用时 BASH_SOURCE 指向软链本身，
+# 直接用它的目录会找不到同目录的 kbs.py——所以先解析符号链接（macOS 的 readlink 没有 -f）。
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+  TARGET="$(readlink "$SOURCE")"
+  case "$TARGET" in
+    /*) SOURCE="$TARGET" ;;
+    *) SOURCE="$(dirname "$SOURCE")/$TARGET" ;;
+  esac
+done
+DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
 exec python3 "$DIR/kbs.py" "$@"
 SHEOF
 chmod +x "$HOME_DIR/kbs"
