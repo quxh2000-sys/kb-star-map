@@ -379,22 +379,31 @@ def install_update_config(package_root: Path, vault: Path) -> Path:
     if target.exists():
         say(f"✅ 已存在更新配置，未覆盖：{target}")
         return target
+    # update-source.txt 一行即可：以 http 开头视为静态清单地址，否则视为 账号/仓库名。
+    manifest_url = ""
     repo = ""
     source = package_root / UPDATE_SOURCE_FILE
     if source.exists():
         lines = [line.strip() for line in source.read_text(encoding="utf-8").splitlines()]
-        repo = next((line for line in lines if line and not line.startswith("#")), "")
+        value = next((line for line in lines if line and not line.startswith("#")), "")
+        if value.startswith(("http://", "https://")):
+            manifest_url = value
+        else:
+            repo = value
     target.write_text(
         "# 知识库星图工作台 · 更新源配置\n"
         "#\n"
         "# 只有你主动点「检查更新 / 立即更新」时才会访问这里配置的地址；\n"
-        "# 请求里只带仓库名，不含任何笔记内容。把 repo 留空即完全关闭联网。\n"
+        "# 请求里只带版本信息，不含任何笔记内容。两个地址都留空即完全关闭联网。\n"
         "#\n"
-        "# repo 格式：账号/仓库名\n"
+        "# 【方式一】静态清单（国内推荐）：把 update.json 与 zip 放到任意能访问的地方，\n"
+        "#           Gitee raw、对象存储、内网文件服务器都可以。\n"
+        f'manifest_url: "{manifest_url}"\n'
+        "#\n"
+        "# 【方式二】releases 接口：账号/仓库名（GitHub 或 Gitee）\n"
         f'repo: "{repo}"\n'
-        "\n"
-        "# 接口基址。GitHub 公有云保持默认；企业版或内网镜像改成对应地址。\n"
-        "api_base: \"https://api.github.com\"\n"
+        "# 接口基址：GitHub 保持默认；Gitee 改成 https://gitee.com/api/v5\n"
+        'api_base: "https://api.github.com"\n'
         "\n"
         "# 启动本地模式时自动检查一次（只取版本号，不下载）。默认关闭。\n"
         "auto_check: false\n"
@@ -402,11 +411,13 @@ def install_update_config(package_root: Path, vault: Path) -> Path:
         "timeout: 15\n",
         encoding="utf-8",
     )
-    if repo:
+    if manifest_url:
+        say(f"✅ 已写入更新配置：{target}（静态清单 {manifest_url}）")
+    elif repo:
         say(f"✅ 已写入更新配置：{target}（更新源 {repo}）")
     else:
         say(f"✅ 已写入更新配置：{target}")
-        say("    → 包内未指定更新源，如需「检查更新」请在其中填写 repo")
+        say("    → 包内未指定更新源，如需「检查更新」请填写 manifest_url 或 repo")
     return target
 
 

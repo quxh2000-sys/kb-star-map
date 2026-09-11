@@ -61,10 +61,19 @@ class UpdateConfig:
     # 接口基址。默认 GitHub 公有云；换成企业版或内网镜像时只改这一项。
     # 本地测试也用它把请求指向 mock 服务。
     api_base: str = DEFAULT_API_BASE
+    # 静态清单地址。设了就优先用它，完全不依赖任何平台的 releases 接口——
+    # 国内把 update.json 与 zip 放在 Gitee raw / 对象存储 / 内网文件服务器都行。
+    manifest_url: str = ""
 
     @property
     def enabled(self) -> bool:
-        return bool(self.repo and "/" in self.repo)
+        return bool(self.manifest_url) or bool(self.repo and "/" in self.repo)
+
+    @property
+    def mode(self) -> str:
+        if self.manifest_url:
+            return "manifest"
+        return "releases" if self.repo and "/" in self.repo else "none"
 
 
 @dataclass(frozen=True)
@@ -118,6 +127,7 @@ def load_config(vault: Path) -> UpdateConfig:
         auto_check=bool(data.get("auto_check", False)),
         timeout=int(data.get("timeout") or DEFAULT_TIMEOUT),
         api_base=str(data.get("api_base") or DEFAULT_API_BASE).rstrip("/"),
+        manifest_url=str(data.get("manifest_url") or "").strip(),
     )
 
 
@@ -182,6 +192,45 @@ def fetch_latest_release(repo: str, timeout: int = DEFAULT_TIMEOUT, api_base: st
         published_at=str(payload.get("published_at") or ""),
     )
 
+
+
+def fetch_manifest(manifest_url: str, timeout: int = DEFAULT_TIMEOUT) -> ReleaseInfo:
+    """读静态清单 update.json。任何静态托管都能用，不依赖平台接口。
+
+    清单格式：
+        {"version": "1.0.2", "zip_url": "...", "sha256": "...", "changelog": "..."}
+    """
+    def _fetch():
+        request = Request(manifest_url, headers={"User-Agent": USER_AGENT})
+        with urlopen(request, timeout=timeout) as response:
+            return json.loads(response.read().decode("utf-8"))
+
+    payload = _retry(_fetch)
+    if not isinstance(payload, dict):
+        raise ValueError("更新清单不是 JSON 对象")
+    version = str(payload.get("version") or "").strip()
+    zip_url = str(payload.get("zip_url") or "").strip()
+    if not version or not zip_url:
+        raise ValueError("更新清单缺少 version 或 zip_url")
+    digest = str(payload.get("sha256") or "").strip().lower()
+    changelog = str(payload.get("changelog") or "").strip()
+    if digest:
+        changelog = f"{changelog}\n\nsha256: {digest}".strip()
+    return ReleaseInfo(
+        version=version.lstrip("vV"),
+        tag=version,
+        changelog=changelog,
+        zip_url=zip_url,
+        zip_name=zip_url.rstrip("/").split("/")[-1] or "package.zip",
+        published_at=str(payload.get("published_at") or ""),
+    )
+
+
+def latest_release(config: UpdateConfig) -> ReleaseInfo:
+    """按配置选源：静态清单优先，其次 releases 接口。"""
+    if config.manifest_url:
+        return fetch_manifest(config.manifest_url, config.timeout)
+    return fetch_latest_release(config.repo, config.timeout, config.api_base)
 
 def download_release(url: str, dest: Path, timeout: int = 60, max_bytes: int = MAX_DOWNLOAD_BYTES) -> Path:
     def _download():
@@ -267,10 +316,10 @@ def check_for_update(vault: Path) -> dict[str, object]:
         return {
             "configured": False,
             "current": current,
-            "message": f"未配置更新源。请在 {config_path(vault)} 里填写 repo，例如 repo: 你的账号/kb-star-map",
+            "message": f"未配置更新源。请在 {config_path(vault)} 里填写 manifest_url 或 repo",
         }
     try:
-        release = fetch_latest_release(config.repo, config.timeout, config.api_base)
+        release = latest_release(config)
     except (HTTPError, URLError, ValueError, OSError, json.JSONDecodeError) as exc:
         return {"configured": True, "current": current, "error": f"{exc.__class__.__name__}: {exc}"}
     return {
@@ -291,7 +340,7 @@ def perform_update(vault: Path) -> dict[str, object]:
     if not config.enabled:
         return {"ok": False, "message": f"未配置更新源：{config_path(vault)}"}
     try:
-        release = fetch_latest_release(config.repo, config.timeout, config.api_base)
+        release = latest_release(config)
     except (HTTPError, URLError, ValueError, OSError, json.JSONDecodeError) as exc:
         return {"ok": False, "message": f"获取版本信息失败：{exc}"}
 
