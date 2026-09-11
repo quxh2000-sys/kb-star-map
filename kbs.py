@@ -62,15 +62,23 @@ def resolve_vault(raw: str | None) -> Path:
 def ensure_vault_ready(vault: Path) -> Path:
     """首次在某库使用时补齐该库需要的文件；已存在的绝不覆盖。"""
     dashboard = vault / DASHBOARD_SUBDIR
+    # 只有「这个库从没被用过」才写模板。
+    # 已有目录说明该库早就跑过（可能一直依赖内置默认规则），
+    # 这时凭空塞一份通用模板会把它的分类整个改掉——那是破坏，不是帮助。
+    first_use = not dashboard.exists()
     dashboard.mkdir(parents=True, exist_ok=True)
 
     rules = dashboard / RULES_FILENAME
     if not rules.exists():
-        template = HOME_DIR / "asset-rules.template.yaml"
-        if template.exists():
-            rules.write_bytes(template.read_bytes())
-            print(f"[提示] 已写入分类规则模板：{rules}")
-            print("       按你的目录结构改它，否则笔记会全部归入同一个类型。")
+        if first_use:
+            template = HOME_DIR / "asset-rules.template.yaml"
+            if template.exists():
+                rules.write_bytes(template.read_bytes())
+                print(f"[提示] 已写入分类规则模板：{rules}")
+                print("       按你的目录结构改它，否则笔记会全部归入同一个类型。")
+        else:
+            print("[提示] 该库没有分类规则文件，当前按内置默认规则分类。")
+            print("       如需按自己的目录分类，可参考工具目录下的 asset-rules.template.yaml 新建一份。")
 
     config = dashboard / UPDATE_CONFIG_FILENAME
     if not config.exists():
