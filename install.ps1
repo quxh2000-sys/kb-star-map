@@ -137,3 +137,85 @@ Say '    kbs update    更新工具'
 Say '    kbs check     查看是否有新版本'
 Say '    kbs stop      停止本地服务'
 Say '    kbs version   查看版本与安装位置'
+
+# ---------- 装完直接进浏览器（像桌面端 Agent 那样）----------
+if ($env:KBS_NO_LAUNCH -eq '1') {
+    Say ''
+    Say '已跳过启动（KBS_NO_LAUNCH=1）。随时执行： kbs "你的笔记库"'
+    exit 0
+}
+
+$vault = $env:KBS_VAULT
+if (-not $vault) {
+    # 就在笔记库目录里跑的，直接用当前目录
+    $here = Get-ChildItem -Path (Get-Location) -Filter *.md -File -ErrorAction SilentlyContinue
+    if (-not $here) {
+        $here = Get-ChildItem -Path (Get-Location) -Filter *.md -File -Recurse -Depth 1 -ErrorAction SilentlyContinue
+    }
+    if ($here) {
+        $vault = (Get-Location).Path
+    } else {
+        try {
+            Add-Type -AssemblyName System.Windows.Forms | Out-Null
+            $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
+            $dlg.Description = '请选择你的笔记库（直接装着 .md 笔记的那一层文件夹）'
+            $dlg.ShowNewFolderButton = $false
+            if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $vault = $dlg.SelectedPath }
+        } catch {
+            $vault = ''
+        }
+    }
+}
+
+if ($vault -and (Test-Path $vault -PathType Container)) {
+    Say ''
+    Say ("正在生成星图并打开浏览器：" + $vault)
+    Say '（这个窗口就是本地管理服务，关掉它即停止；Ctrl+C 也可以）'
+    Say ''
+    & (Join-Path $Home4Kbs 'kbs.cmd') $vault
+    exit $LASTEXITCODE
+}
+
+Say ''
+Say '已安装完成。要打开星图，执行： kbs "你的笔记库"'
+
+# ---------- 装完直接进浏览器（像桌面端 Agent 那样）----------
+if ($env:KBS_NO_LAUNCH -eq '1') {
+    Say ''
+    Say '已跳过启动（KBS_NO_LAUNCH=1）。随时执行： kbs "你的笔记库"'
+    exit 0
+}
+
+$vault = $env:KBS_VAULT
+if (-not $vault) {
+    # 就在笔记库目录里跑的，直接用当前目录
+    $here = Get-ChildItem -Path (Get-Location) -Filter *.md -File -ErrorAction SilentlyContinue
+    if (-not $here) {
+        $here = Get-ChildItem -Path (Get-Location) -Filter *.md -File -Recurse -Depth 1 -ErrorAction SilentlyContinue
+    }
+    if ($here) {
+        $vault = (Get-Location).Path
+    } else {
+        try {
+            Add-Type -AssemblyName System.Windows.Forms | Out-Null
+            $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
+            $dlg.Description = '请选择你的笔记库（直接装着 .md 笔记的那一层文件夹）'
+            $dlg.ShowNewFolderButton = $false
+            if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $vault = $dlg.SelectedPath }
+        } catch {
+            $vault = ''
+        }
+    }
+}
+
+if ($vault -and (Test-Path $vault -PathType Container)) {
+    Say ''
+    Say ("正在生成星图并打开浏览器：" + $vault)
+    Say '（这个窗口就是本地管理服务，关掉它即停止；Ctrl+C 也可以）'
+    Say ''
+    & (Join-Path $Home4Kbs 'kbs.cmd') $vault
+    exit $LASTEXITCODE
+}
+
+Say ''
+Say '已安装完成。要打开星图，执行： kbs "你的笔记库"'

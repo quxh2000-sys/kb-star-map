@@ -140,3 +140,43 @@ say '    kbs update    更新工具'
 say '    kbs check     查看是否有新版本'
 say '    kbs stop      停止本地服务'
 say '    kbs version   查看版本与安装位置'
+
+# ---------- 装完直接进浏览器（像桌面端 Agent 那样）----------
+if [ "${KBS_NO_LAUNCH:-}" = "1" ]; then
+  say ''
+  say '已跳过启动（KBS_NO_LAUNCH=1）。随时执行： kbs "你的笔记库"'
+  exit 0
+fi
+
+VAULT="${KBS_VAULT:-}"
+if [ -z "$VAULT" ]; then
+  # 就在笔记库目录里跑的，直接用当前目录
+  if find "$PWD" -maxdepth 2 -name '*.md' -print -quit 2>/dev/null | grep -q .; then
+    VAULT="$PWD"
+  elif command -v osascript >/dev/null 2>&1; then
+    # macOS 原生文件夹选择框；curl | bash 时 stdin 是脚本本身，弹窗不依赖 stdin
+    VAULT="$(osascript \
+      -e 'try' \
+      -e 'POSIX path of (choose folder with prompt "请选择你的笔记库（直接装着 .md 笔记的那一层文件夹）")' \
+      -e 'on error' \
+      -e 'return ""' \
+      -e 'end try' 2>/dev/null || true)"
+  else
+    printf '笔记库路径（直接装着 .md 笔记的文件夹，留空跳过）：'
+    read -r VAULT < /dev/tty || VAULT=""
+  fi
+fi
+
+if [ -n "$VAULT" ] && [ -d "$VAULT" ]; then
+  say ''
+  say "正在生成星图并打开浏览器：$VAULT"
+  say '（这个窗口就是本地管理服务，关掉它即停止；Ctrl+C 也可以）'
+  say ''
+  if [ "${KBS_NO_OPEN:-}" = "1" ]; then
+    exec "$HOME_DIR/kbs" port "$VAULT"     # 起服务但不自动开浏览器
+  fi
+  exec "$HOME_DIR/kbs" "$VAULT"
+fi
+
+say ''
+say '已安装完成。要打开星图，执行： kbs "你的笔记库"'
