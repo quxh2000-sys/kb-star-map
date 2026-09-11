@@ -1,0 +1,315 @@
+#!/usr/bin/env python3
+"""知识库星图工作台 · 更新器：从 GitHub Releases 检查并应用更新。
+
+**联网边界（重要）**
+  · 只有你主动点「检查更新」或「立即更新」时才访问 GitHub；
+  · 请求里只包含仓库名，**不含任何笔记内容**；
+  · 把 更新配置.yaml 的 repo 留空，本工具就完全不联网。
+
+**为什么更新器很短**
+  它不自己实现升级，而是下载新版分发包、解压，然后调用**新版自带的 installer.py**。
+  于是"升级"这套动作（备份 → 覆盖程序层 → 清理旧版遗留 → 保护数据层）只有一份实现，
+  自动更新与手动重跑安装器的安全保证完全一致，也不会随版本漂移。
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import zipfile
+from dataclasses import dataclass
+from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
+
+DASHBOARD_SUBDIR = Path("系统") / "知识库可视化工作台"
+SCRIPTS_SUBDIR = Path("系统") / "工作流" / "工具脚本"
+MANIFEST_NAME = "installed.json"
+VERSION_STAMP = "工具版本.txt"
+CONFIG_FILENAME = "更新配置.yaml"
+
+DEFAULT_API_BASE = "https://api.github.com"
+RELEASES_PATH = "/repos/{repo}/releases/latest"
+USER_AGENT = "kb-star-map-updater"
+DEFAULT_TIMEOUT = 15
+MAX_DOWNLOAD_BYTES = 128 * 1024 * 1024
+DIGEST_RE = re.compile(r"sha256[:\s=]+([0-9a-fA-F]{64})")
+
+# Windows 控制台默认代码页可能表示不了中文，直接 print 会抛 UnicodeEncodeError。
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+    except (AttributeError, ValueError):
+        pass
+
+
+@dataclass(frozen=True)
+class UpdateConfig:
+    repo: str
+    auto_check: bool
+    timeout: int
+    # 接口基址。默认 GitHub 公有云；换成企业版或内网镜像时只改这一项。
+    # 本地测试也用它把请求指向 mock 服务。
+    api_base: str = DEFAULT_API_BASE
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.repo and "/" in self.repo)
+
+
+@dataclass(frozen=True)
+class ReleaseInfo:
+    version: str
+    tag: str
+    changelog: str
+    zip_url: str
+    zip_name: str
+    published_at: str
+
+
+def config_path(vault: Path) -> Path:
+    return vault / DASHBOARD_SUBDIR / CONFIG_FILENAME
+
+
+def read_installed_version(vault: Path, fallback: str = "未知") -> str:
+    """当前版本：优先读安装清单，其次读版本戳。"""
+    manifest = vault / SCRIPTS_SUBDIR / MANIFEST_NAME
+    try:
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        if isinstance(data, dict) and data.get("version"):
+            return str(data["version"])
+    except (OSError, json.JSONDecodeError):
+        pass
+    stamp = vault / DASHBOARD_SUBDIR / VERSION_STAMP
+    try:
+        for line in stamp.read_text(encoding="utf-8").splitlines():
+            if line.startswith("版本："):
+                return line.split("：", 1)[1].strip()
+    except OSError:
+        pass
+    return fallback
+
+
+def load_config(vault: Path) -> UpdateConfig:
+    """读更新配置；文件缺失或损坏都按"未配置"处理，绝不因为配置文件阻断升级。"""
+    import yaml
+
+    path = config_path(vault)
+    data: dict = {}
+    if path.exists():
+        try:
+            loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                data = loaded
+        except Exception:
+            data = {}
+    return UpdateConfig(
+        repo=str(data.get("repo") or "").strip(),
+        auto_check=bool(data.get("auto_check", False)),
+        timeout=int(data.get("timeout") or DEFAULT_TIMEOUT),
+        api_base=str(data.get("api_base") or DEFAULT_API_BASE).rstrip("/"),
+    )
+
+
+def parse_version(text: str) -> tuple[int, ...]:
+    """'v1.2.3' / '1.2' → (1, 2, 3) / (1, 2)。取不到数字时返回空元组。"""
+    numbers = re.findall(r"\d+", str(text))
+    return tuple(int(n) for n in numbers) if numbers else ()
+
+
+def is_newer(candidate: str, current: str) -> bool:
+    new, old = parse_version(candidate), parse_version(current)
+    if not new:
+        return False
+    if not old:
+        return True
+    # 补齐长度再比，避免 1.2 与 1.2.0 被判成不同
+    width = max(len(new), len(old))
+    return new + (0,) * (width - len(new)) > old + (0,) * (width - len(old))
+
+
+def fetch_latest_release(repo: str, timeout: int = DEFAULT_TIMEOUT, api_base: str = DEFAULT_API_BASE) -> ReleaseInfo:
+    """取最新 release。只发一个 GET，不带任何本地信息。"""
+    request = Request(
+        api_base.rstrip("/") + RELEASES_PATH.format(repo=repo),
+        headers={"User-Agent": USER_AGENT, "Accept": "application/vnd.github+json"},
+    )
+    with urlopen(request, timeout=timeout) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("GitHub 返回的不是一个 release 对象")
+    tag = str(payload.get("tag_name") or "").strip()
+    assets = [a for a in payload.get("assets") or [] if str(a.get("name", "")).lower().endswith(".zip")]
+    if not assets:
+        raise ValueError(f"release {tag or '(无 tag)'} 里没有 .zip 资产")
+    asset = assets[0]
+    return ReleaseInfo(
+        version=tag.lstrip("vV") or tag,
+        tag=tag,
+        changelog=str(payload.get("body") or "").strip(),
+        zip_url=str(asset.get("browser_download_url") or ""),
+        zip_name=str(asset.get("name") or "package.zip"),
+        published_at=str(payload.get("published_at") or ""),
+    )
+
+
+def download_release(url: str, dest: Path, timeout: int = 60, max_bytes: int = MAX_DOWNLOAD_BYTES) -> Path:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    request = Request(url, headers={"User-Agent": USER_AGENT})
+    written = 0
+    with urlopen(request, timeout=timeout) as response, dest.open("wb") as handle:
+        while True:
+            chunk = response.read(64 * 1024)
+            if not chunk:
+                break
+            written += len(chunk)
+            if written > max_bytes:
+                handle.close()
+                dest.unlink(missing_ok=True)
+                raise ValueError(f"下载超过上限 {max_bytes // 1024 // 1024} MB，已中止")
+            handle.write(chunk)
+    return dest
+
+
+def sha256_of(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def expected_digest(changelog: str) -> str:
+    """release 说明里写了 `sha256: <64位十六进制>` 就拿来校验，没写就跳过。"""
+    match = DIGEST_RE.search(changelog or "")
+    return match.group(1).lower() if match else ""
+
+
+def extract_package(zip_path: Path, dest: Path) -> Path:
+    """解压并做 zip-slip 防护；返回解压后的包根目录。"""
+    dest.mkdir(parents=True, exist_ok=True)
+    root = dest.resolve()
+    with zipfile.ZipFile(zip_path) as archive:
+        for member in archive.infolist():
+            target = (dest / member.filename).resolve()
+            if not str(target).startswith(str(root)):
+                raise ValueError(f"压缩包内含越界路径，已拒绝：{member.filename}")
+        archive.extractall(dest)
+    installer = dest / "installer.py"
+    if not installer.exists():
+        found = list(dest.rglob("installer.py"))
+        if not found:
+            raise ValueError("压缩包里没有安装器 installer.py，可能不是本工具的分发包")
+        installer = found[0]
+    return installer
+
+
+def apply_update(vault: Path, zip_path: Path) -> dict[str, object]:
+    """解压新包并调用**新版自带的安装器**完成升级。
+
+    升级语义（备份 / 清理 / 保护数据层）由新版安装器负责，这里不重复实现。
+    """
+    workdir = Path(tempfile.mkdtemp(prefix="kb-update-"))
+    try:
+        installer = extract_package(zip_path, workdir)
+        result = subprocess.run(
+            [sys.executable, str(installer), "--vault", str(vault)],
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+        output = ((result.stdout or "") + (result.stderr or "")).strip()
+        return {"ok": result.returncode == 0, "returncode": result.returncode, "output": output[-4000:]}
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
+
+
+def check_for_update(vault: Path) -> dict[str, object]:
+    """给界面用的检查结果。任何异常都转成结构化结果，不抛给调用方。"""
+    config = load_config(vault)
+    current = read_installed_version(vault)
+    if not config.enabled:
+        return {
+            "configured": False,
+            "current": current,
+            "message": f"未配置更新源。请在 {config_path(vault)} 里填写 repo，例如 repo: 你的账号/kb-star-map",
+        }
+    try:
+        release = fetch_latest_release(config.repo, config.timeout, config.api_base)
+    except (HTTPError, URLError, ValueError, OSError, json.JSONDecodeError) as exc:
+        return {"configured": True, "current": current, "error": f"{exc.__class__.__name__}: {exc}"}
+    return {
+        "configured": True,
+        "current": current,
+        "latest": release.version,
+        "tag": release.tag,
+        "changelog": release.changelog[:2000],
+        "published_at": release.published_at,
+        "zip_name": release.zip_name,
+        "update_available": is_newer(release.version, current),
+    }
+
+
+def perform_update(vault: Path) -> dict[str, object]:
+    """完整执行一次更新：检查 → 下载 → 校验 → 交给新版安装器。"""
+    config = load_config(vault)
+    if not config.enabled:
+        return {"ok": False, "message": f"未配置更新源：{config_path(vault)}"}
+    try:
+        release = fetch_latest_release(config.repo, config.timeout, config.api_base)
+    except (HTTPError, URLError, ValueError, OSError, json.JSONDecodeError) as exc:
+        return {"ok": False, "message": f"获取版本信息失败：{exc}"}
+
+    current = read_installed_version(vault)
+    if not is_newer(release.version, current):
+        return {"ok": True, "skipped": True, "message": f"已是最新版本 v{current}"}
+
+    workdir = Path(tempfile.mkdtemp(prefix="kb-download-"))
+    try:
+        archive = download_release(release.zip_url, workdir / release.zip_name, timeout=120)
+        digest = sha256_of(archive)
+        wanted = expected_digest(release.changelog)
+        if wanted and wanted != digest:
+            return {
+                "ok": False,
+                "message": f"校验失败，已中止：期望 sha256 {wanted[:12]}…，实际 {digest[:12]}…",
+            }
+        applied = apply_update(vault, archive)
+        return {
+            "ok": bool(applied["ok"]),
+            "from": current,
+            "to": release.version,
+            "digest": digest,
+            "digest_verified": bool(wanted),
+            "output": applied["output"],
+            "message": f"已更新到 v{release.version}" if applied["ok"] else "更新过程中安装器报错",
+        }
+    except (HTTPError, URLError, ValueError, OSError, zipfile.BadZipFile) as exc:
+        return {"ok": False, "message": f"更新失败：{exc.__class__.__name__}: {exc}"}
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="知识库星图工作台 · 检查并应用更新")
+    parser.add_argument("--vault", type=Path, default=Path(__file__).resolve().parents[3])
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--check", action="store_true", help="只检查是否有新版本（不下载）")
+    mode.add_argument("--apply", action="store_true", help="下载并应用更新")
+    args = parser.parse_args(argv)
+
+    if args.check:
+        print(json.dumps(check_for_update(args.vault), ensure_ascii=False, indent=2))
+        return 0
+    result = perform_update(args.vault)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0 if result.get("ok") else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

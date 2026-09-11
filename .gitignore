@@ -1,0 +1,12 @@
+# 生成物与运行时数据，永不出现在仓库里
+__pycache__/
+*.pyc
+知识库可视化工作台.html
+工具版本.txt
+installed.json
+升级备份/
+运营任务草稿/
+资产分类规则.yaml
+更新配置.yaml
+*.tmp
+.DS_Store

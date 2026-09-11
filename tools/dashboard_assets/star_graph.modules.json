@@ -1,0 +1,34 @@
+{
+  "note": "star_graph.js 的模块片段，由 build_kb_dashboard.py 按此顺序拼接后内联进单文件 HTML；拼接结果必须与拆分前的 star_graph.js 逐字节相同。",
+  "assembled_from": "star_graph.js",
+  "modules": [
+    {
+      "file": "star_graph_01_init_state.js",
+      "role": "数据装载、画布上下文、全局状态与基础几何"
+    },
+    {
+      "file": "star_graph_02_render_engine.js",
+      "role": "渲染主循环与各绘制层（网格/运营/星系/连线/节点/小地图）"
+    },
+    {
+      "file": "star_graph_03_relation_selection.js",
+      "role": "关系视图、节点选中与详情、重置与指针交互"
+    },
+    {
+      "file": "star_graph_04_utils.js",
+      "role": "通用工具：复制、提示条、打开笔记、请求封装"
+    },
+    {
+      "file": "star_graph_05_maintenance_panel.js",
+      "role": "知识维护面板：调改/新增、差异预览、确认写入"
+    },
+    {
+      "file": "star_graph_06_operations_panel.js",
+      "role": "运营任务面板：任务、候选、关系、需求召回、知识包"
+    },
+    {
+      "file": "star_graph_07_lens_search_init.js",
+      "role": "观察镜头、图例、空态、筛选、搜索与事件绑定"
+    }
+  ]
+}
