@@ -69,7 +69,7 @@ def package_version(package_root: Path) -> str:
     """版本以包内 VERSION 文件为准，安装器里只是兜底默认值。"""
     version_file = package_root / "VERSION"
     try:
-        text = version_file.read_text(encoding="utf-8").strip()
+        text = version_file.read_text(encoding="utf-8-sig").strip()
     except OSError:
         return DEFAULT_VERSION
     return text or DEFAULT_VERSION
@@ -215,7 +215,7 @@ def read_manifest(scripts_dir: Path) -> dict[str, Any]:
     """读上一版安装清单；没有或损坏都按"首次安装"处理，不阻断升级。"""
     path = scripts_dir / MANIFEST_NAME
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, json.JSONDecodeError):
         return {}
     return data if isinstance(data, dict) else {}
@@ -384,7 +384,7 @@ def install_update_config(package_root: Path, vault: Path) -> Path:
     repo = ""
     source = package_root / UPDATE_SOURCE_FILE
     if source.exists():
-        lines = [line.strip() for line in source.read_text(encoding="utf-8").splitlines()]
+        lines = [line.strip() for line in source.read_text(encoding="utf-8-sig").splitlines()]
         value = next((line for line in lines if line and not line.startswith("#")), "")
         if value.startswith(("http://", "https://")):
             manifest_url = value

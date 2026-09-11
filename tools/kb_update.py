@@ -97,14 +97,14 @@ def read_installed_version(vault: Path, fallback: str = "未知") -> str:
     """当前版本：优先读安装清单，其次读版本戳。"""
     manifest = vault / SCRIPTS_SUBDIR / MANIFEST_NAME
     try:
-        data = json.loads(manifest.read_text(encoding="utf-8"))
+        data = json.loads(manifest.read_text(encoding="utf-8-sig"))
         if isinstance(data, dict) and data.get("version"):
             return str(data["version"])
     except (OSError, json.JSONDecodeError):
         pass
     stamp = vault / DASHBOARD_SUBDIR / VERSION_STAMP
     try:
-        for line in stamp.read_text(encoding="utf-8").splitlines():
+        for line in stamp.read_text(encoding="utf-8-sig").splitlines():
             if line.startswith("版本："):
                 return line.split("：", 1)[1].strip()
     except OSError:
