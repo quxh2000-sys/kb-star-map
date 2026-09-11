@@ -68,7 +68,8 @@ Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
 # ---- 版本戳 ----
 $stamp = [ordered]@{ version = "$($info.version)"; installed_at = (Get-Date -Format s) }
 $stampJson = $stamp | ConvertTo-Json -Compress
-Set-Content -Path (Join-Path $Home4Kbs 'installed.json') -Value $stampJson -Encoding UTF8
+# 必须不带 BOM：kbs.py 用 json 解析，BOM 会让它读不出版本号
+[IO.File]::WriteAllText((Join-Path $Home4Kbs 'installed.json'), $stampJson, (New-Object Text.UTF8Encoding $false))
 
 # ---- kbs 命令 ----
 $shimLines = @(

@@ -39,7 +39,9 @@ def _load(module_name: str):
 def installed_version() -> str:
     manifest = HOME_DIR / "installed.json"
     try:
-        return str(json.loads(manifest.read_text(encoding="utf-8")).get("version") or "未知")
+        # utf-8-sig：Windows 上 Set-Content -Encoding UTF8 会写 BOM，
+        # 用 utf-8 读会解析失败导致版本显示"未知"。
+        return str(json.loads(manifest.read_text(encoding="utf-8-sig")).get("version") or "未知")
     except (OSError, json.JSONDecodeError, AttributeError):
         return "未知"
 
