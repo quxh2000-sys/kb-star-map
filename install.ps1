@@ -59,7 +59,10 @@ if (Test-Path $Home4Kbs) {
     New-Item -ItemType Directory -Force -Path $backup | Out-Null
     Copy-Item (Join-Path $Home4Kbs "tools") $backup -Recurse -Force -ErrorAction SilentlyContinue
     Say ("已备份旧版本到 " + $backup)
-    Remove-Item (Join-Path $Home4Kbs "tools") -Recurse -Force -ErrorAction SilentlyContinue
+    # 清空后解压：覆盖解压不会删除「新版已移除」的文件，旧残留会一直躺着。
+    # 保留用户自己的更新源设置与备份目录。
+    Get-ChildItem -Path $Home4Kbs -Force | Where-Object { $_.Name -ne '升级备份' -and $_.Name -ne '更新配置.yaml' } |
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 }
 New-Item -ItemType Directory -Force -Path $Home4Kbs | Out-Null
 Expand-Archive -Path $zip -DestinationPath $Home4Kbs -Force
@@ -88,7 +91,10 @@ $cfg = @(
     'auto_check: false',
     'timeout: 15'
 ) -join "`n"
-[IO.File]::WriteAllText((Join-Path $Home4Kbs '更新配置.yaml'), $cfg, (New-Object Text.UTF8Encoding $false))
+$cfgPath = Join-Path $Home4Kbs '更新配置.yaml'
+if (-not (Test-Path $cfgPath)) {   # 用户可能改过更新源，不要覆盖
+    [IO.File]::WriteAllText($cfgPath, $cfg, (New-Object Text.UTF8Encoding $false))
+}
 
 # ---- kbs 命令 ----
 $shimLines = @(

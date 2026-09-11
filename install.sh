@@ -56,12 +56,15 @@ if info.get("sha256") and digest != info["sha256"].lower():
 print(f"校验通过（sha256 {digest[:16]}…）")
 PYEOF
 
-if [ -d "$HOME_DIR/tools" ]; then
+if [ -d "$HOME_DIR" ]; then
   BACKUP="$HOME_DIR/升级备份/$(date +%Y%m%d-%H%M%S)"
   mkdir -p "$BACKUP"
   cp -R "$HOME_DIR/tools" "$BACKUP/" 2>/dev/null || true
   say "已备份旧版本到 $BACKUP"
-  rm -rf "$HOME_DIR/tools"
+  # 清空后解压：覆盖解压不会删除「新版已移除」的文件，旧残留会一直躺着。
+  # 保留用户自己的更新源设置与备份目录。
+  find "$HOME_DIR" -mindepth 1 -maxdepth 1 \
+    ! -name '升级备份' ! -name '更新配置.yaml' -exec rm -rf {} + 2>/dev/null || true
 fi
 mkdir -p "$HOME_DIR"
 "$PY" -c 'import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])' "$WORK/pkg.zip" "$HOME_DIR"
@@ -78,12 +81,14 @@ if src.exists():
     value = next((x for x in lines if x and not x.startswith("#")), "")
 manifest = f'manifest_url: "{value}"' if value.startswith("http") else 'manifest_url: ""'
 repo = "" if value.startswith("http") else value
-(home / "更新配置.yaml").write_text(
-    "# 知识库星图工作台 · 更新源（只有主动检查更新时才会联网）\n"
-    f'{manifest}\nrepo: "{repo}"\napi_base: "https://api.github.com"\n'
-    "auto_check: false\ntimeout: 15\n",
-    encoding="utf-8",
-)
+cfg = home / "更新配置.yaml"
+if not cfg.exists():          # 用户可能改过更新源，不要覆盖
+    cfg.write_text(
+        "# 知识库星图工作台 · 更新源（只有主动检查更新时才会联网）\n"
+        f'{manifest}\nrepo: "{repo}"\napi_base: "https://api.github.com"\n'
+        "auto_check: false\ntimeout: 15\n",
+        encoding="utf-8",
+    )
 PYEOF
 
 # kbs 启动器
