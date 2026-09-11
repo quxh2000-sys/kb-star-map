@@ -343,6 +343,35 @@ def source_diagnostics(notes: list[Any], graph: StarGraph) -> dict[str, Any]:
     return {"unresolved":unresolved,"chains":chains,"source_count":len(chains),"with_atoms":sum(c['atom_count']>0 for c in chains)}
 
 
+
+def _fit_within_canvas(nodes: list[StarNode], width: int, height: int, margin: float = 40.0) -> list[StarNode]:
+    """把整张图等比缩放并平移到画布内。
+
+    只做「等比缩放 + 平移」，所以聚类之间、节点之间的相对位置完全不变，
+    形状与原布局一致；区别只是不再有节点被压到边界上。
+    画布尺寸保持不变，前端相机无需改动。
+    """
+    if not nodes:
+        return nodes
+    xs = [node.x for node in nodes]
+    ys = [node.y for node in nodes]
+    span_x = max(xs) - min(xs)
+    span_y = max(ys) - min(ys)
+    usable_w = max(1.0, width - 2 * margin)
+    usable_h = max(1.0, height - 2 * margin)
+    scale = 1.0
+    if span_x > 0:
+        scale = min(scale, usable_w / span_x)
+    if span_y > 0:
+        scale = min(scale, usable_h / span_y)
+    offset_x = margin + (usable_w - span_x * scale) / 2 - min(xs) * scale
+    offset_y = margin + (usable_h - span_y * scale) / 2 - min(ys) * scale
+    return [
+        replace(node, x=round(node.x * scale + offset_x, 2), y=round(node.y * scale + offset_y, 2))
+        for node in nodes
+    ]
+
+
 def layout_star_graph(graph: StarGraph, width: int = 2400, height: int = 1600) -> StarGraph:
     grouped: dict[str, list[StarNode]] = {}
     for node in graph.nodes:
@@ -379,8 +408,11 @@ def layout_star_graph(graph: StarGraph, width: int = 2400, height: int = 1600) -
             jitter = ((digest % 1000) / 1000 - 0.5) * 0.36
             radius_from_center = 22 + 15.5 * math.sqrt(member_index)
             member_angle = member_index * golden_angle + jitter
-            x = min(width, max(0, cx + radius_from_center * math.cos(member_angle)))
-            y = min(height, max(0, cy + radius_from_center * math.sin(member_angle)))
+            # 这里不做坐标夹取：夹取会把越界节点全压到边界上，
+            # 堆成一条竖线/横线（实测运行记录 861 个节点中有 190 个被压到 x=2400）。
+            # 越界统一交给收尾的等比缩放平移处理。
+            x = cx + radius_from_center * math.cos(member_angle)
+            y = cy + radius_from_center * math.sin(member_angle)
             node_radius = min(10.0, 2.4 + math.log2(node.degree + 1) * 1.2)
             priority = 4 if node.degree >= 15 or "canonical" in node.title.lower() else 3 if node.degree >= 6 else 2 if node.degree else 1
             laid_out.append(
@@ -393,5 +425,6 @@ def layout_star_graph(graph: StarGraph, width: int = 2400, height: int = 1600) -
                     label_priority=priority,
                 )
             )
+    laid_out = _fit_within_canvas(laid_out, width, height)
     laid_out.sort(key=lambda item: item.id)
     return StarGraph(nodes=tuple(laid_out), edges=graph.edges, clusters=tuple(clusters))
