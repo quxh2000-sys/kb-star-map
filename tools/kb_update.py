@@ -64,6 +64,9 @@ class UpdateConfig:
     # 静态清单地址。设了就优先用它，完全不依赖任何平台的 releases 接口——
     # 国内把 update.json 与 zip 放在 Gitee raw / 对象存储 / 内网文件服务器都行。
     manifest_url: str = ""
+    # 配置文件存在但读不出来时的原因（例如被存成了带 BOM 的 UTF-8）。
+    # 有值就说明"不是没配，是没读成功"，界面必须把这句话说出来，不能显示"未配置"。
+    parse_error: str = ""
 
     @property
     def enabled(self) -> bool:
@@ -115,19 +118,25 @@ def load_config(vault: Path) -> UpdateConfig:
 
     path = config_path(vault)
     data: dict = {}
+    parse_error = ""
     if path.exists():
         try:
-            loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
+            # utf-8-sig：无 BOM 时与 utf-8 等价；带 BOM 时自动剥离。
+            # 同事用记事本另存为「UTF-8 带 BOM」会让 YAML 直接解析失败。
+            loaded = yaml.safe_load(path.read_text(encoding="utf-8-sig"))
             if isinstance(loaded, dict):
                 data = loaded
-        except Exception:
-            data = {}
+            else:
+                parse_error = f"{CONFIG_FILENAME} 不是键值结构"
+        except Exception as exc:
+            parse_error = f"{CONFIG_FILENAME} 解析失败：{exc}"
     return UpdateConfig(
         repo=str(data.get("repo") or "").strip(),
         auto_check=bool(data.get("auto_check", False)),
         timeout=int(data.get("timeout") or DEFAULT_TIMEOUT),
         api_base=str(data.get("api_base") or DEFAULT_API_BASE).rstrip("/"),
         manifest_url=str(data.get("manifest_url") or "").strip(),
+        parse_error=parse_error,
     )
 
 
@@ -313,6 +322,13 @@ def check_for_update(vault: Path) -> dict[str, object]:
     config = load_config(vault)
     current = read_installed_version(vault)
     if not config.enabled:
+        if config.parse_error:
+            return {
+                "configured": False,
+                "current": current,
+                "error": config.parse_error,
+                "message": f"{config.parse_error}，请修正 {config_path(vault)}",
+            }
         return {
             "configured": False,
             "current": current,
@@ -338,7 +354,8 @@ def perform_update(vault: Path) -> dict[str, object]:
     """完整执行一次更新：检查 → 下载 → 校验 → 交给新版安装器。"""
     config = load_config(vault)
     if not config.enabled:
-        return {"ok": False, "message": f"未配置更新源：{config_path(vault)}"}
+        detail = f"（{config.parse_error}）" if config.parse_error else ""
+        return {"ok": False, "message": f"未配置更新源{detail}：{config_path(vault)}"}
     try:
         release = latest_release(config)
     except (HTTPError, URLError, ValueError, OSError, json.JSONDecodeError) as exc:

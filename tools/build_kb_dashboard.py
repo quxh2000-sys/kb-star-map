@@ -214,7 +214,9 @@ def load_classification_rules(vault: Path, explicit: Path | None = None) -> tupl
     for path in candidates:
         if not path.exists():
             continue
-        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        # utf-8-sig：无 BOM 时解码结果与 utf-8 完全一致；带 BOM 时自动剥离。
+        # 同事用记事本另存为「UTF-8 带 BOM」是很常见的，BOM 会让 YAML 解析失败。
+        data = yaml.safe_load(path.read_text(encoding="utf-8-sig")) or {}
         if not isinstance(data, dict):
             raise ValueError(f"分类规则文件应为键值映射: {path}")
         rules = data.get("path_rules") or []
@@ -303,7 +305,7 @@ SENSITIVE_SUMMARY = "（敏感笔记：正文不进入星图快照，请直接�
 
 
 def parse_note(path: Path, vault: Path) -> NoteRecord:
-    text = path.read_text(encoding="utf-8", errors="replace")
+    text = path.read_text(encoding="utf-8-sig", errors="replace")
     metadata, body, warning = _split_frontmatter(text)
     relative_path = path.relative_to(vault).as_posix()
     asset_type, inferred = classify_note(relative_path, metadata)
@@ -377,7 +379,7 @@ def parse_health_reports(vault: Path) -> list[dict[str, Any]]:
         return []
     reports: list[dict[str, Any]] = []
     for path in sorted(folder.glob("????-??-??-知识库健康巡检.md")):
-        text = path.read_text(encoding="utf-8", errors="replace")
+        text = path.read_text(encoding="utf-8-sig", errors="replace")
         date_match = re.match(r"(\d{4}-\d{2}-\d{2})", path.name)
         scan_match = re.search(r"\*\*扫描文件\*\*:\s*(\d+)\s*个", text)
         issues = []
@@ -611,7 +613,7 @@ def count_canonical_products(vault: Path) -> int:
     path = vault / "知识库" / "01_原子知识组件库" / "98_产品与工具" / "产品canonical索引.md"
     if not path.exists():
         return 0
-    text = path.read_text(encoding="utf-8", errors="replace")
+    text = path.read_text(encoding="utf-8-sig", errors="replace")
     section = text.split("## 2. canonical 清单", 1)[-1].split("## 3.", 1)[0]
     return sum(1 for line in section.splitlines() if line.startswith("|") and "[[" in line)
 
@@ -654,7 +656,7 @@ def build_dashboard_data(vault: Path, notes: list[NoteRecord]) -> dict[str, Any]
             "scanned_notes": len(notes),
             "parse_warnings": len(warnings),
         },
-        "taxonomy": _json_safe(yaml.safe_load((vault / "知识库/04_需求与规则引擎/知识库九维分类与关系词典.yaml").read_text(encoding="utf-8"))) if (vault / "知识库/04_需求与规则引擎/知识库九维分类与关系词典.yaml").exists() else {},
+        "taxonomy": _json_safe(yaml.safe_load((vault / "知识库/04_需求与规则引擎/知识库九维分类与关系词典.yaml").read_text(encoding="utf-8-sig"))) if (vault / "知识库/04_需求与规则引擎/知识库九维分类与关系词典.yaml").exists() else {},
         "metrics": metrics,
         "quality": build_quality_coverage(notes),
         "health": {"latest": latest_report, "trend": reports[-20:]},

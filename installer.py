@@ -325,7 +325,7 @@ def warn_if_rules_look_unconfigured(rules_path: Path) -> None:
     若它没有 path_rules、或 schema_version 超出本版支持范围，星图会退化成一个星系。
     """
     try:
-        text = rules_path.read_text(encoding="utf-8")
+        text = rules_path.read_text(encoding="utf-8-sig")
     except OSError:
         return
     try:
