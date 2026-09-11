@@ -77,6 +77,44 @@ def parse_maintenance_route(path: str) -> str | None:
     return match.group(1) if match else None
 
 
+def reload_token(dashboard_dir: Path) -> str:
+    """页面自动刷新用的指纹：工具版本 + 页面文件 mtime。
+
+    任一变化都意味着「页面该刷新了」：
+      · 工具更新（kbs update / 界面点更新）→ 版本号变
+      · 星图重建（kbs build / kbs / 维护写入）→ HTML mtime 变
+    前端轮询这个值，变了就自动重载，不需要用户手动刷新。
+    """
+    page = dashboard_dir / DASHBOARD_HTML_NAME
+    try:
+        stamp = page.stat().st_mtime_ns
+    except OSError:
+        stamp = 0
+    try:
+        from kb_update import read_installed_version
+        version = read_installed_version("未知")
+    except Exception:                      # noqa: BLE001 - 版本读不到不该影响服务
+        version = "未知"
+    return f"{version}:{stamp}"
+
+
+def _schedule_self_restart(delay: float = 1.5) -> None:
+    """更新已把磁盘上的代码换掉，但本进程还跑着旧模块——原地重启以载入新版本。
+
+    否则页面刷新了、行为还是旧的（v1.0.12 那个坏掉的「检查更新」就是这么藏了 7 个版本）。
+    """
+    import threading
+
+    def _restart() -> None:
+        time.sleep(delay)
+        try:
+            os.execv(sys.executable, [sys.executable, *sys.argv])
+        except OSError:
+            os._exit(1)                    # 重启失败就退出，至少不留在旧代码上
+
+    threading.Thread(target=_restart, daemon=True).start()
+
+
 def maintenance_default_path(asset_type: str, title: str) -> str:
     folder = MAINTENANCE_DIRS.get(str(asset_type), "收件箱/知识维护新增")
     clean_title = re.sub(r"[\\/:*?\"<>|]+", "-", " ".join(str(title).split())).strip(" .-")
@@ -241,6 +279,9 @@ def make_handler(vault: Path, dashboard_dir: Path, handoff_dir: Path | None = No
             if parsed.path == "/api/status":
                 self._send_json(200, {"ok": True, "mode": "local-management"})
                 return
+            if parsed.path == "/api/version":
+                self._send_json(200, {"ok": True, "token": reload_token(dashboard_dir)})
+                return
             if parsed.path == "/api/operations/current":
                 self._send_json(200, {"ok": True, "task": latest_task(store)})
                 return
@@ -359,6 +400,9 @@ def make_handler(vault: Path, dashboard_dir: Path, handoff_dir: Path | None = No
                         result = perform_update()
                         # 更新后数据已变，让前端提示刷新；HTML 由新版安装器重建。
                         self._send_json(200 if result.get("ok") else 502, result)
+                        if result.get("ok") and not result.get("skipped"):
+                            # 代码已换新，让进程也换成新代码——只刷页面不重启等于没更新
+                            _schedule_self_restart()
                     else:
                         self._send_json(400, {"ok": False, "message": f"未知的更新动作: {action}"})
                     return

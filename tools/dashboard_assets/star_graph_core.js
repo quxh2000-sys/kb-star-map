@@ -33,6 +33,17 @@ globalThis.KBStarGraphCore = (() => {
     return zoom >= 2.5;
   }
 
+  // 「要不要自动刷新页面」的纯判断，便于确定性测试。
+  // 自动刷新靠服务端 /api/version 的指纹（工具版本 + 页面 mtime）。
+  function reloadDecision(previousToken, currentToken, hasPendingEdit) {
+    if (!currentToken) return "wait";          // 服务在重启或没给指纹，下一轮再看
+    if (previousToken === null || previousToken === undefined) return "record";
+    if (currentToken === previousToken) return "wait";
+    // 有未提交的差异预览时先不刷，否则用户刚编辑的内容会丢
+    if (hasPendingEdit) return "defer";
+    return "reload";
+  }
+
   function buildSpatialGrid(nodes, cellSize = 48) {
     const cells = new Map();
     for (const node of nodes) {
@@ -613,5 +624,6 @@ globalThis.KBStarGraphCore = (() => {
     withinPlayback,
     matchQuery,
     resolveGroupColor,
+    reloadDecision,
   };
 })();

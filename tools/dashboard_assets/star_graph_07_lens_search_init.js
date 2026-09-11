@@ -297,13 +297,63 @@ globalThis.KBStarGraph = globalThis.KBStarGraph || {};
       if (!window.confirm(`发现新版本 v${result.latest}（当前 v${result.current}）。\n\n${lines}\n\n现在更新？更新前会自动备份当前版本，你的笔记与分类规则不会被改动。`)) return;
       if (button) button.textContent = "更新中…";
       const applied = await requestJson("/api/update", {method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({action: "apply"})});
-      window.alert(`${applied.message || "更新完成"}。页面将刷新。`);
+      if (button) button.textContent = "重启中…";
+      // 服务端换了新代码后会原地重启，这里等它回来再刷新，否则会打到死端口
+      const back = await waitForServer();
+      window.alert(`${applied.message || "更新完成"}。${back ? "服务已重启，页面将刷新。" : "服务重启较慢，请手动刷新页面。"}`);
       window.location.reload();
     } catch (error) {
       toast(error.message);
     } finally {
       if (button) { button.disabled = false; button.textContent = "检查更新"; }
     }
+  }
+
+  function waitForServer(timeoutMs = 40000) {
+    const deadline = Date.now() + timeoutMs;
+    const probe = async () => {
+      try {
+        const response = await fetch("/api/status", {cache: "no-store"});
+        return response.ok;
+      } catch (error) {
+        return false;
+      }
+    };
+    return (async () => {
+      while (Date.now() < deadline) {
+        if (await probe()) return true;
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+      return false;
+    })();
+  }
+
+  function startReloadWatch() {
+    // 只在本地管理模式、且确实是 http 服务时轮询
+    if (!localManagement) return;
+    if (typeof location === "undefined" || !/^https?:$/.test(location.protocol)) return;
+    let token = null;
+    let warned = false;
+    setInterval(async () => {
+      let data = null;
+      try {
+        const response = await fetch("/api/version", {cache: "no-store"});
+        if (!response.ok) return;
+        data = await response.json();
+      } catch (error) {
+        return;                 // 服务正在重启，下一轮再试
+      }
+      const pending = !!(state.maintenance && state.maintenance.preview);
+      const action = core.reloadDecision(token, data.token, pending);
+      if (action === "record") { token = data.token; return; }
+      if (action === "wait") return;
+      if (action === "defer") {
+        // 刻意不更新 token：等他处理完预览，下一轮就会刷
+        if (!warned) { warned = true; toast("星图已更新，处理完当前的差异预览后会自动刷新"); }
+        return;
+      }
+      location.reload();
+    }, 2000);
   }
 
   document.getElementById("closeNode").addEventListener("click", () => selectNode(null));
@@ -331,6 +381,7 @@ globalThis.KBStarGraph = globalThis.KBStarGraph || {};
     requestJson("/api/update", {method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({action: "check"})})
       .then(renderUpdateState)
       .catch(() => { const hint = document.getElementById("updateHint"); if (hint) hint.textContent = "未检查更新"; });
+    startReloadWatch();
   }
   document.getElementById("graphDepth").addEventListener("change", event => { state.depth = Number(event.target.value); if (state.selected) setRelationView(state.relationView); else requestRender(); });
   document.getElementById("createOperationTask").addEventListener("click", () => createOperationTask().catch(error => toast(error.message)));
