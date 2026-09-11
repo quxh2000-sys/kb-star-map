@@ -49,6 +49,12 @@ def resolve_vault(raw: str | None) -> Path:
     vault = Path(raw).expanduser().resolve() if raw else Path.cwd()
     if not vault.is_dir():
         raise SystemExit(f"[错误] 不是文件夹：{vault}")
+    # 家目录几乎必然含 .md，一旦被当成笔记库就会去扫整个 home——又慢又没意义。
+    if vault == Path.home():
+        raise SystemExit(
+            f"[错误] {vault} 是家目录，不是笔记库。\n"
+            '  请指向真正装着笔记的文件夹，例如： kbs "~/Documents/我的笔记"'
+        )
     markdown = [p for p in vault.rglob("*.md") if not any(part.startswith(".") for part in p.relative_to(vault).parts)]
     if not markdown:
         raise SystemExit(

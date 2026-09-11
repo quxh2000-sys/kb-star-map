@@ -150,22 +150,22 @@ fi
 
 VAULT="${KBS_VAULT:-}"
 if [ -z "$VAULT" ]; then
-  # 就在笔记库目录里跑的，直接用当前目录
-  if find "$PWD" -maxdepth 2 -name '*.md' -print -quit 2>/dev/null | grep -q .; then
-    VAULT="$PWD"
-  elif command -v osascript >/dev/null 2>&1; then
-    # macOS 原生文件夹选择框；curl | bash 时 stdin 是脚本本身，弹窗不依赖 stdin
+  # 不做任何自动搜索：扫到大家目录会卡很久，而且猜错了更麻烦。
+  # 只弹原生文件夹选择框，让用户明确指定。
+  if command -v osascript >/dev/null 2>&1; then
+    # curl | bash 时 stdin 是脚本本身，所以必须用图形弹窗而不是 read
     VAULT="$(osascript \
       -e 'try' \
-      -e 'POSIX path of (choose folder with prompt "请选择你的笔记库（直接装着 .md 笔记的那一层文件夹）")' \
+      -e 'POSIX path of (choose folder with prompt "请选择你的笔记库（装着 .md 笔记的那一层文件夹）")' \
       -e 'on error' \
       -e 'return ""' \
       -e 'end try' 2>/dev/null || true)"
   else
-    printf '笔记库路径（直接装着 .md 笔记的文件夹，留空跳过）：'
+    printf '笔记库路径（装着 .md 笔记的文件夹，留空跳过）：'
     read -r VAULT < /dev/tty || VAULT=""
   fi
 fi
+
 
 if [ -n "$VAULT" ] && [ -d "$VAULT" ]; then
   say ''
