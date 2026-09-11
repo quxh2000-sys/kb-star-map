@@ -1,6 +1,6 @@
 {
-  "version": "1.0.11",
-  "zip_url": "https://gitee.com/quxh20000/kb-star-map/raw/master/dist/kb-star-map-v1.0.11.zip",
-  "sha256": "798a17aef9a6c55dd483141dc51cbc703bc6f40b4891d6bbbfec29bec81f7e5b",
-  "changelog": "见 https://github.com/quxh2000-sys/kb-star-map/releases/tag/v1.0.11"
+  "version": "1.0.12",
+  "zip_url": "https://gitee.com/quxh20000/kb-star-map/raw/master/dist/kb-star-map-v1.0.12.zip",
+  "sha256": "dc01681f3d41673a13acdd04c0fc803fca8dce922092b1fffd39c07c1d81aaaa",
+  "changelog": "见 https://github.com/quxh2000-sys/kb-star-map/releases/tag/v1.0.12"
 }
