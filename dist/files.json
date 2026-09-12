@@ -1,0 +1,33 @@
+{
+  "version": "1.1.0",
+  "generated_at": "2026-09-12T09:15:46+0800",
+  "files": {
+    "README.md": "85ac66047830b2787a87217d96f3aea40620ddd774e92dff1259ed8c6a86c8e3",
+    "VERSION": "1575e1af4a95f12f70b4ee6a6adce8160953d93ea17dc2611b90883ccc3ad3b8",
+    "asset-rules.template.yaml": "ea5df5e980d1ba253403480479b679c220e9350f3191f0dca484d550bac48cf5",
+    "install.ps1": "c3b7af29d51903e21f3f1f12a17100ccad906cdf6a9b48470ff9041fbf0621d2",
+    "install.sh": "bbfd4bb57fbe7c1aa3e445e450977434cc34ff7c1cbaa41028e46c71b8e9bfff",
+    "kbs.py": "194028841cfa8e609227128a374e6b26288c30a9da39863fff19130aa2d5ecfd",
+    "tools/bootstrap.py": "d24307a3df14a0c6e68f77c1dbfe98305972ebd845f331d1fc703d793135d132",
+    "tools/build_kb_dashboard.py": "70d89456bcd4dedd1ac65ddbd1b746ec915e752dbe36d42e7cd195d29aaf53f4",
+    "tools/dashboard_assets/star_graph.css": "21121180767bd0f0711ed9dac82364669d5a1fb8f42fdcbc75033c211b2805ae",
+    "tools/dashboard_assets/star_graph.modules.json": "a4f6483d102f672841ca1a182ab649ad813792d26aac335e0cbb8324b6a00a0f",
+    "tools/dashboard_assets/star_graph_01_init_state.js": "68995871137e2f1331982534159e5e076005595d2bf2972117a4f1f7271755d3",
+    "tools/dashboard_assets/star_graph_02_render_engine.js": "4bdf58a2d1a330a09e69df8ea11d9f83d9e2f652333f90c7b534bf473d90df56",
+    "tools/dashboard_assets/star_graph_03_relation_selection.js": "06b69ea2e4922c2075de273596b8b19a2a8800b629a9b877f0e8455ffcb2eb9c",
+    "tools/dashboard_assets/star_graph_04_utils.js": "6cb33ba4a23d0a2d40eabfc161c70182e3de01239594dec3767f4e2f04446ec2",
+    "tools/dashboard_assets/star_graph_05_maintenance_panel.js": "1360f83697c3f0500b35625d10447c9e6c16349701ba4910b8fc59363850da63",
+    "tools/dashboard_assets/star_graph_06_operations_panel.js": "bf2f3626f621afcca980e8289e5c53d472b77cad4eb14de64c4d058f4ab0a1cc",
+    "tools/dashboard_assets/star_graph_07_lens_search_init.js": "2a00e4ba2d9a31620f0ff6c33c2cd098d7c2eec6238effdfe469802ccb4b8024",
+    "tools/dashboard_assets/star_graph_08_settings.js": "a530039dbe893ce3a1818e34c4deb6ff38a85898f0a65a8e5ca40fd649c49e28",
+    "tools/dashboard_assets/star_graph_core.js": "787aa4b82ed2dbe5b990e3a50a64fe1d6ebe103c7c8d3704f3cbecace9ca2ba2",
+    "tools/kb_handoff.py": "91a969ed5839d91bca7af6d3aaab39f7c2b2517e58d7cb7548afba6d5d12a0f2",
+    "tools/kb_maintenance.py": "cc85e3e42d149c0f1f480ad70cef04a5a104743c2350d986833fbd3748e3ee73",
+    "tools/kb_operations.py": "f64ba06fed2b487d03d10b4de6b5d306a03a70e5f90bedb8077a75a7e353924c",
+    "tools/kb_star_graph.py": "c03f73b586d619b1ec1c856aec135ef799a1a11edf71c76167bd3f26d47edf74",
+    "tools/kb_update.py": "6941482e131da72e10d2268ca49d10270ade90131ee408acc6af1a65b64cdde8",
+    "tools/serve_kb_dashboard.py": "f2efbba2a5159e2db45427598445835bc19e7253012402597568eed1586e005d",
+    "tools/templates/kb_dashboard_template.html": "f47063a56ae6d29f5826c8131c1e204977cabadf1ec97be3b126af58e3809127",
+    "update-source.txt": "043e0dac6a2f561d6464d92fd3fd54ed749aec44111aa5ad587379290e8e0c40"
+  }
+}

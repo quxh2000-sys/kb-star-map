@@ -1,3 +1,1 @@
-# 更新源：静态清单地址（国内推荐，Gitee raw 直链）。
-# 留空或删除本行则关闭「检查更新」。
-https://gitee.com/quxh20000/kb-star-map/raw/master/dist/update.json
+https://gitee.com/quxh20000/kb-star-map/raw/master/dist/files.json

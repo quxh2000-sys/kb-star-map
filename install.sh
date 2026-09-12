@@ -3,10 +3,12 @@
 #
 #   curl -fsSL https://gitee.com/quxh20000/kb-star-map/raw/master/install.sh | bash
 #
-# 装到 ~/.kb-star-map，并把 kbs 命令放进 PATH。之后任何目录执行 kbs 即可。
+# 不用 zip：从 Gitee 逐文件拉取并逐个校验 sha256。下载逻辑复用 tools/bootstrap.py
+#（安装与更新共用同一份实现，避免多处维护）。
 set -e
 
-MANIFEST_URL="https://gitee.com/quxh20000/kb-star-map/raw/master/dist/update.json"
+RAW_BASE="https://gitee.com/quxh20000/kb-star-map/raw/master"
+MANIFEST_URL="$RAW_BASE/dist/files.json"
 HOME_DIR="$HOME/.kb-star-map"
 
 say() { printf '%s\n' "$*"; }
@@ -25,73 +27,49 @@ done
 [ -n "$PY" ] || die "没有找到 Python 3.9+。macOS 可执行 xcode-select --install，或到 python.org 安装。"
 say "Python: $("$PY" --version 2>&1)"
 
-say ''
-say '正在从 Gitee 获取最新版本…'
-INFO="$("$PY" - "$MANIFEST_URL" <<'PYEOF'
-import json, sys, urllib.request
-url = sys.argv[1]
-req = urllib.request.Request(url, headers={"User-Agent": "kbs-installer"})
-with urllib.request.urlopen(req, timeout=30) as r:
-    print(json.dumps(json.loads(r.read().decode("utf-8")), ensure_ascii=False))
-PYEOF
-)" || die "读取更新清单失败，请检查网络。"
-VERSION="$("$PY" -c 'import json,sys; print(json.loads(sys.argv[1])["version"])' "$INFO")"
-say "版本: v$VERSION"
-
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
-say '正在下载…'
-"$PY" - "$INFO" "$WORK/pkg.zip" <<'PYEOF'
-import hashlib, json, sys, urllib.request
-info = json.loads(sys.argv[1]); dest = sys.argv[2]
-req = urllib.request.Request(info["zip_url"], headers={"User-Agent": "kbs-installer"})
-with urllib.request.urlopen(req, timeout=300) as r, open(dest, "wb") as f:
-    while True:
-        chunk = r.read(262144)
-        if not chunk: break
-        f.write(chunk)
-digest = hashlib.sha256(open(dest, "rb").read()).hexdigest()
-if info.get("sha256") and digest != info["sha256"].lower():
-    sys.exit(f"校验不通过：期望 {info['sha256']} / 实际 {digest}")
-print(f"校验通过（sha256 {digest[:16]}…）")
+
+say ''
+say '正在获取引导器…'
+"$PY" - "$RAW_BASE/tools/bootstrap.py" "$WORK/bootstrap.py" <<'PYEOF'
+import sys, urllib.request
+url, dest = sys.argv[1], sys.argv[2]
+req = urllib.request.Request(url, headers={"User-Agent": "kbs-installer"})
+with urllib.request.urlopen(req, timeout=60) as r, open(dest, "wb") as fh:
+    fh.write(r.read())
 PYEOF
 
+# 旧版先备份：出问题能退回去。只留最近 3 份。
 if [ -d "$HOME_DIR" ]; then
   BACKUP="$HOME_DIR/升级备份/$(date +%Y%m%d-%H%M%S)"
   mkdir -p "$BACKUP"
   cp -R "$HOME_DIR/tools" "$BACKUP/" 2>/dev/null || true
   say "已备份旧版本到 $BACKUP"
-  # 只留最近 3 份，避免长期堆积
   ls -1dt "$HOME_DIR/升级备份"/*/ 2>/dev/null | tail -n +4 | while read -r old; do rm -rf "$old"; done
-  # 清空后解压：覆盖解压不会删除「新版已移除」的文件，旧残留会一直躺着。
-  # 保留用户自己的更新源设置与备份目录。
+  # 清空重装：逐文件覆盖不会删掉「新版已移除」的文件，旧残留会一直躺着。
+  # 保留用户自己的东西：备份、更新源、设置。
   find "$HOME_DIR" -mindepth 1 -maxdepth 1 \
-    ! -name '升级备份' ! -name '更新配置.yaml' -exec rm -rf {} + 2>/dev/null || true
+    ! -name '升级备份' ! -name '更新配置.yaml' ! -name '设置.yaml' \
+    -exec rm -rf {} + 2>/dev/null || true
 fi
-mkdir -p "$HOME_DIR"
-"$PY" -c 'import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])' "$WORK/pkg.zip" "$HOME_DIR"
-"$PY" -c 'import json,sys,datetime,pathlib; pathlib.Path(sys.argv[1]).write_text(json.dumps({"version": sys.argv[2], "installed_at": datetime.datetime.now().isoformat(timespec="seconds")}, ensure_ascii=False), encoding="utf-8")' "$HOME_DIR/installed.json" "$VERSION"
 
-# 更新源配置：属于工具本身，放在安装目录里
-"$PY" - "$HOME_DIR" <<'PYEOF'
-import pathlib, sys
-home = pathlib.Path(sys.argv[1])
-src = home / "update-source.txt"
-value = ""
-if src.exists():
-    lines = [x.strip() for x in src.read_text(encoding="utf-8").splitlines()]
-    value = next((x for x in lines if x and not x.startswith("#")), "")
-manifest = f'manifest_url: "{value}"' if value.startswith("http") else 'manifest_url: ""'
-repo = "" if value.startswith("http") else value
-cfg = home / "更新配置.yaml"
-if not cfg.exists():          # 用户可能改过更新源，不要覆盖
-    cfg.write_text(
-        "# 知识库星图工作台 · 更新源（只有主动检查更新时才会联网）\n"
-        f'{manifest}\nrepo: "{repo}"\napi_base: "https://api.github.com"\n'
-        "auto_check: false\ntimeout: 15\n",
-        encoding="utf-8",
-    )
-PYEOF
+say ''
+say '--- 开始安装 ---'
+"$PY" "$WORK/bootstrap.py" --manifest "$MANIFEST_URL" --raw-base "$RAW_BASE" --target "$HOME_DIR" \
+  || die "安装未完成，请看上面的提示。"
+
+# 更新源配置属于工具本身；已有就不覆盖，免得冲掉用户改过的
+if [ ! -f "$HOME_DIR/更新配置.yaml" ]; then
+  cat > "$HOME_DIR/更新配置.yaml" <<YAMLEOF
+# 知识库星图工作台 · 更新源（只有主动检查更新时才会联网）
+manifest_url: "$MANIFEST_URL"
+repo: ""
+api_base: "https://api.github.com"
+auto_check: false
+timeout: 15
+YAMLEOF
+fi
 
 # kbs 启动器
 cat > "$HOME_DIR/kbs" <<'SHEOF'
@@ -118,6 +96,8 @@ for dir in "$HOME/.local/bin" "/usr/local/bin"; do
     ln -sf "$HOME_DIR/kbs" "$dir/kbs" && LINKED="$dir/kbs" && break
   fi
 done
+
+VERSION="$("$PY" -c 'import json,sys,pathlib; print(json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")).get("version","?"))' "$HOME_DIR/installed.json" 2>/dev/null || echo "?")"
 
 say ''
 say '=============================================='
@@ -165,7 +145,6 @@ if [ -z "$VAULT" ]; then
     read -r VAULT < /dev/tty || VAULT=""
   fi
 fi
-
 
 if [ -n "$VAULT" ] && [ -d "$VAULT" ]; then
   say ''
