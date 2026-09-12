@@ -25,9 +25,27 @@ globalThis.KBStarGraph = globalThis.KBStarGraph || {};
     }
   }
 
+  // 「随系统」要解析成实际明暗，因为画布是 JS 画的，CSS 管不到
+  function effectiveTheme(value) {
+    if (value !== "auto") return value;
+    try {
+      return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+    } catch (error) {
+      return "dark";
+    }
+  }
+
   function applyTheme(value, persist = true) {
     const theme = THEMES.includes(value) ? value : "auto";
     document.documentElement.setAttribute("data-theme", theme);
+    // 知识类型配色是有语义的：画布、图例、运营轨道必须同时换，不能只反相画布。
+    // 图例色块是 renderLegend 写死的内联样式，不重画就会和画布对不上。
+    if (typeof G.setPalette === "function") {
+      G.setPalette(effectiveTheme(theme));
+      if (typeof G.renderLegend === "function") G.renderLegend();
+      if (typeof G.renderOperationalRail === "function") G.renderOperationalRail();
+      if (typeof G.requestRender === "function") G.requestRender();
+    }
     if (persist) {
       try { localStorage.setItem(THEME_KEY, theme); } catch (error) { /* 无痕模式忽略 */ }
     }
@@ -232,10 +250,17 @@ globalThis.KBStarGraph = globalThis.KBStarGraph || {};
   }
 
   function initThemeSection() {
-    applyTheme(readTheme(), false);
     document.querySelectorAll("#themeChoice [data-theme-value]").forEach(button => {
       button.addEventListener("click", () => applyTheme(button.dataset.themeValue));
     });
+    // 选「随系统」时，系统切换明暗要跟着变（画布配色也要跟着换）
+    try {
+      const media = window.matchMedia("(prefers-color-scheme: light)");
+      const onChange = () => { if (readTheme() === "auto") applyTheme("auto", false); };
+      if (media.addEventListener) media.addEventListener("change", onChange);
+      else if (media.addListener) media.addListener(onChange);
+    } catch (error) { /* 老浏览器忽略 */ }
+    applyTheme(readTheme(), false);
   }
 
   function initPanel() {

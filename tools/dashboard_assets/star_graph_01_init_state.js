@@ -23,7 +23,33 @@ globalThis.KBStarGraph = globalThis.KBStarGraph || {};
     adjacency.get(edge.target)?.add(edge.source);
   });
 
-  const colors = {"来源资料":"#27c2d1","拆解记录":"#4c9ab7","知识原子":"#2f6bff","专题知识":"#8b5cf6","需求记录":"#d36ba6","方案成果":"#1fb8d0","验证反馈":"#48b66e","治理规则":"#f2b84b","运行记录":"#51657d","未分类":"#8a94a6"};
+  // 知识类型配色是有语义的，图例与画布必须用同一份，所以两套主题各给一份，
+  // 由 G.setPalette 统一切换——不能只在 CSS 里反相画布，那样图例会撒谎。
+  const NODE_COLORS = {
+    dark: {"来源资料":"#27c2d1","拆解记录":"#4c9ab7","知识原子":"#2f6bff","专题知识":"#8b5cf6","需求记录":"#d36ba6","方案成果":"#1fb8d0","验证反馈":"#48b66e","治理规则":"#f2b84b","运行记录":"#51657d","未分类":"#8a94a6"},
+    // 浅色版同色相压暗，保证在白底上够对比（不是简单反相）
+    light: {"来源资料":"#0e8fa4","拆解记录":"#2b6f8c","知识原子":"#1f4fd8","专题知识":"#6d3fd4","需求记录":"#b34a85","方案成果":"#0f8ba3","验证反馈":"#2c8f52","治理规则":"#a8760a","运行记录":"#5b6b7e","未分类":"#6b7688"},
+  };
+  const PAINT = {
+    dark: {grid:"rgba(67,111,161,.075)", edgeSource:"rgba(39,194,209,.55)", edgeDefault:"rgba(76,139,213,.42)",
+           clusterLabel:"#d9edff", clusterHalo:"#cce7ff", nodeGlyph:"#dff1ff", nodeGlyphDim:"#7e98b4",
+           nodeFill:"#e8f4ff", locatedRing:"#bdeaff", miniBg:"#071427", miniStroke:"#c2dcff",
+           healthBlocked:"#ef5b68", healthWarn:"#f2b84b", fallback:"#60748c"},
+    light: {grid:"rgba(90,120,160,.14)", edgeSource:"rgba(14,143,164,.5)", edgeDefault:"rgba(60,110,180,.32)",
+            clusterLabel:"#1d3a5c", clusterHalo:"#2a4a6b", nodeGlyph:"#12314f", nodeGlyphDim:"#5c7186",
+            nodeFill:"#12314f", locatedRing:"#1f4fd8", miniBg:"#eef2f7", miniStroke:"#5c7186",
+            healthBlocked:"#c0392b", healthWarn:"#a8760a", fallback:"#6b7688"},
+  };
+  const colors = Object.assign({}, NODE_COLORS.dark);
+  // 必须是同一个对象被原地更新：02 模块在加载时就解构了 paint，
+  // 换对象会让它一直用旧引用。
+  const paint = Object.assign({}, PAINT.dark);
+  G.setPalette = name => {
+    const key = name === "light" ? "light" : "dark";
+    Object.assign(colors, NODE_COLORS[key]);
+    Object.assign(paint, PAINT[key]);
+  };
+  G.paint = paint;
   const state = {
     mode: "global",
     operationTask: null,

@@ -128,7 +128,7 @@
 /* 命令栏第 4 个栅格（设置按钮）补齐列定义，避免快照信息被挤到第二行 */
 .command-bar{grid-template-columns:260px minmax(200px,1fr) auto 230px}
 @media(max-width:900px){
-.settings-open{grid-column:2;grid-row:1}
+.settings-open{grid-column:2;grid-row:1;justify-self:end;width:max-content}
 }
 @media(max-width:560px){
 .settings-open{gap:0;padding:0 13px;font-size:0}
@@ -157,7 +157,7 @@
   --accent-pale-b:#1d4ed8;--accent-pale-c:#1b2634;--accent-pale-d:#0e7490;--accent-pale-e:#0e7490;
   --accent-pale-f:#0e7490;--accent-info:#3b5a7a;--accent-sky:#3b5a7a;--accent-sky-b:#3b5a7a;--accent-sky-c:#3b5a7a;
   --checkbox-accent:#2f6bff;--brand-line:#0e7490;--brand-text:#0e7490;--focus:#2f6bff;--canvas-1:#ffffff;
-  --canvas-3:#e9eef5;--canvas-filter:invert(1) hue-rotate(180deg);--warn-line:#e3c07a;--warn-text:#8a5a00;
+  --canvas-3:#e9eef5;--canvas-filter:none;--warn-line:#e3c07a;--warn-text:#8a5a00;
   --toast-bg:#1b2634;--toast-fg:#f8fafc;--shadow-a:rgba(15,23,42,.10);--shadow-b:rgba(15,23,42,.16);
   --scrim:rgba(15,23,42,.30);--update-ring:rgba(47,107,255,.35);--update-bg:rgba(47,107,255,.08);
   --update-hover:rgba(47,107,255,.16);
@@ -174,7 +174,6 @@
 [data-theme="light"] .candidate-card{background:rgba(246,248,252,.92)}
 [data-theme="light"] .lens-toggle,[data-theme="light"] .node-close,[data-theme="light"] .graph-controls button,[data-theme="light"] .graph-controls select,[data-theme="light"] .controls-toggle{background:rgba(255,255,255,.9)}
 [data-theme="light"] .mode-banner{background:rgba(255,248,232,.95)}
-[data-theme="light"] #starGraphCanvas,[data-theme="light"] .mini-map canvas{filter:var(--canvas-filter)}
 
 /* ══ 随系统（data-theme="auto"，以及尚未写入属性时的默认口径）══ */
 @media (prefers-color-scheme: light){
@@ -196,7 +195,7 @@
   --accent-pale-b:#1d4ed8;--accent-pale-c:#1b2634;--accent-pale-d:#0e7490;--accent-pale-e:#0e7490;
   --accent-pale-f:#0e7490;--accent-info:#3b5a7a;--accent-sky:#3b5a7a;--accent-sky-b:#3b5a7a;--accent-sky-c:#3b5a7a;
   --checkbox-accent:#2f6bff;--brand-line:#0e7490;--brand-text:#0e7490;--focus:#2f6bff;--canvas-1:#ffffff;
-  --canvas-3:#e9eef5;--canvas-filter:invert(1) hue-rotate(180deg);--warn-line:#e3c07a;--warn-text:#8a5a00;
+  --canvas-3:#e9eef5;--canvas-filter:none;--warn-line:#e3c07a;--warn-text:#8a5a00;
   --toast-bg:#1b2634;--toast-fg:#f8fafc;--shadow-a:rgba(15,23,42,.10);--shadow-b:rgba(15,23,42,.16);
   --scrim:rgba(15,23,42,.30);--update-ring:rgba(47,107,255,.35);--update-bg:rgba(47,107,255,.08);
   --update-hover:rgba(47,107,255,.16);
@@ -213,5 +212,4 @@
 :root[data-theme="auto"] .candidate-card,:root:not([data-theme]) .candidate-card{background:rgba(246,248,252,.92)}
 :root[data-theme="auto"] .lens-toggle,:root[data-theme="auto"] .node-close,:root[data-theme="auto"] .graph-controls button,:root[data-theme="auto"] .graph-controls select,:root[data-theme="auto"] .controls-toggle,:root:not([data-theme]) .lens-toggle,:root:not([data-theme]) .node-close,:root:not([data-theme]) .graph-controls button,:root:not([data-theme]) .graph-controls select,:root:not([data-theme]) .controls-toggle{background:rgba(255,255,255,.9)}
 :root[data-theme="auto"] .mode-banner,:root:not([data-theme]) .mode-banner{background:rgba(255,248,232,.95)}
-:root[data-theme="auto"] #starGraphCanvas,:root[data-theme="auto"] .mini-map canvas,:root:not([data-theme]) #starGraphCanvas,:root:not([data-theme]) .mini-map canvas{filter:var(--canvas-filter)}
 }

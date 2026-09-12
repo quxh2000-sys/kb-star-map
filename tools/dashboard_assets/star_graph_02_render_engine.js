@@ -4,7 +4,7 @@ globalThis.KBStarGraph = globalThis.KBStarGraph || {};
 (() => {
   "use strict";
   const G = globalThis.KBStarGraph;
-  const { data, core, canvas, ctx, mini, miniCtx, nodes, edges, clusters, nodeById, adjacency, colors, state, basePositions, localManagement, esc } = G;
+  const { data, core, canvas, ctx, mini, miniCtx, nodes, edges, clusters, nodeById, adjacency, colors, paint, state, basePositions, localManagement, esc } = G;
 
   function requestRender() {
     if (G.frameRequested) return;
@@ -85,7 +85,7 @@ globalThis.KBStarGraph = globalThis.KBStarGraph || {};
 
   function drawGrid(rect) {
     ctx.save();
-    ctx.strokeStyle = "rgba(67,111,161,.075)";
+    ctx.strokeStyle = paint.grid;
     const gap = 42;
     for (let x = (rect.width / 2 - state.camera.x * state.camera.zoom) % gap; x < rect.width; x += gap) {
       ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, rect.height); ctx.stroke();
@@ -104,7 +104,7 @@ globalThis.KBStarGraph = globalThis.KBStarGraph || {};
       const source = byId.get(edge.source);
       const target = byId.get(edge.target);
       if (!source || !target) continue;
-      ctx.strokeStyle = edge.kind === "source-input" ? "rgba(39,194,209,.55)" : "rgba(76,139,213,.42)";
+      ctx.strokeStyle = edge.kind === "source-input" ? paint.edgeSource : paint.edgeDefault;
       ctx.lineWidth = edge.kind === "source-input" ? 1.4 : 2;
       ctx.setLineDash(edge.kind === "source-input" ? [5, 6] : []);
       ctx.beginPath();
@@ -140,11 +140,11 @@ globalThis.KBStarGraph = globalThis.KBStarGraph || {};
       ctx.textAlign = "center";
       ctx.fillText(node.title.slice(0, 16), node.x, node.y + 34);
     }
-    ctx.fillStyle = "#dff1ff";
+    ctx.fillStyle = paint.nodeGlyph;
     ctx.font = "700 18px system-ui";
     ctx.textAlign = "center";
     ctx.fillText(state.operationTask?.title || "创建任务后开始知识运营", rect.width / 2, 58);
-    ctx.fillStyle = "#7e98b4";
+    ctx.fillStyle = paint.nodeGlyphDim;
     ctx.font = "500 11px system-ui";
     ctx.fillText(state.operationTask ? `当前阶段：${state.operationTask.stage}` : "当前为只读阶段预览", rect.width / 2, 80);
     ctx.restore();
@@ -154,7 +154,7 @@ globalThis.KBStarGraph = globalThis.KBStarGraph || {};
     if (state.selected) {
       for (const column of G.chainColumns) {
         const p=core.worldToScreen(column,state.camera);
-        ctx.fillStyle="#cce7ff";ctx.font="600 13px system-ui";ctx.textAlign="left";
+        ctx.fillStyle=paint.clusterHalo;ctx.font="600 13px system-ui";ctx.textAlign="left";
         ctx.fillText(`${column.title} · ${column.count}`,p.x,p.y);
       }
       return;
@@ -164,14 +164,14 @@ globalThis.KBStarGraph = globalThis.KBStarGraph || {};
       if (!visibleCount) continue;
       const p = core.worldToScreen(cluster, state.camera);
       const radius = Math.max(50, Math.sqrt(visibleCount) * 15) * state.camera.zoom;
-      const color = colors[cluster.id] || "#60748c";
+      const color = colors[cluster.id] || paint.fallback;
       const glow = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, radius);
       glow.addColorStop(0, color + "28");
       glow.addColorStop(1, color + "00");
       ctx.fillStyle = glow;
       ctx.beginPath(); ctx.arc(p.x, p.y, radius, 0, Math.PI * 2); ctx.fill();
       if (state.camera.zoom < .9) {
-        ctx.fillStyle = "#d9edff";
+        ctx.fillStyle = paint.clusterLabel;
         ctx.font = "700 15px system-ui";
         ctx.textAlign = "center";
         ctx.fillText(`${core.displayType(cluster.title)} · ${visibleCount}`, p.x, p.y);
@@ -213,7 +213,7 @@ globalThis.KBStarGraph = globalThis.KBStarGraph || {};
 
   /** 节点配色：分组优先，未命中回落资产类型色（分组是用户显式定义，故优先于默认分类）。 */
   function nodeColor(node) {
-    return core.resolveGroupColor(node, state.groups) || colors[node.asset_type] || "#60748c";
+    return core.resolveGroupColor(node, state.groups) || colors[node.asset_type] || paint.fallback;
   }
 
   function drawNodes() {
@@ -229,7 +229,7 @@ globalThis.KBStarGraph = globalThis.KBStarGraph || {};
       const health = data.graph.healthByNodeId?.[node.id];
       if (health && core.layerAllowsHealth(state.layers)) {
         ctx.globalAlpha = .9;
-        ctx.strokeStyle = health === "blocked" ? "#ef5b68" : "#f2b84b";
+        ctx.strokeStyle = health === "blocked" ? paint.healthBlocked : paint.healthWarn;
         ctx.lineWidth = 2;
         ctx.beginPath(); ctx.arc(p.x, p.y, r + 4, 0, Math.PI * 2); ctx.stroke();
       }
@@ -239,10 +239,10 @@ globalThis.KBStarGraph = globalThis.KBStarGraph || {};
       ctx.shadowBlur = node.id === state.selected ? 18 : node.id === state.hovered || node.id === state.located ? 12 : 3;
       ctx.beginPath(); ctx.arc(p.x, p.y, node.id === state.selected ? r + 3 : r, 0, Math.PI * 2); ctx.fill();
       ctx.shadowBlur = 0;
-      if(node.id === state.located){ctx.strokeStyle="#bdeaff";ctx.lineWidth=2;ctx.beginPath();ctx.arc(p.x,p.y,r+6,0,Math.PI*2);ctx.stroke();}
+      if(node.id === state.located){ctx.strokeStyle=paint.locatedRing;ctx.lineWidth=2;ctx.beginPath();ctx.arc(p.x,p.y,r+6,0,Math.PI*2);ctx.stroke();}
       if (node.id === state.selected || node.id === state.hovered || state.selected || core.visibleLabel(node, state.camera.zoom)) {
         ctx.globalAlpha = Math.min(1, opacity + .2);
-        ctx.fillStyle = "#e8f4ff";
+        ctx.fillStyle = paint.nodeFill;
         ctx.font = `${node.id === state.selected ? "700 13" : "500 10"}px system-ui`;
         ctx.textAlign = "left";
         const limit=node.id === state.selected ? 30 : 21;
@@ -263,7 +263,7 @@ globalThis.KBStarGraph = globalThis.KBStarGraph || {};
 
   function drawMini() {
     miniCtx.clearRect(0, 0, mini.width, mini.height);
-    miniCtx.fillStyle = "#071427";
+    miniCtx.fillStyle = paint.miniBg;
     miniCtx.fillRect(0, 0, mini.width, mini.height);
     for (const node of nodes) {
       if (!passes(node)) continue;
@@ -274,7 +274,7 @@ globalThis.KBStarGraph = globalThis.KBStarGraph || {};
     miniCtx.globalAlpha = 1;
     const ww = state.camera.width / state.camera.zoom;
     const wh = state.camera.height / state.camera.zoom;
-    miniCtx.strokeStyle = "#c2dcff";
+    miniCtx.strokeStyle = paint.miniStroke;
     miniCtx.strokeRect((state.camera.x - ww / 2) / 2400 * mini.width, (state.camera.y - wh / 2) / 1600 * mini.height, ww / 2400 * mini.width, wh / 1600 * mini.height);
   }
 
