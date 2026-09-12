@@ -29,6 +29,10 @@
     {
       "file": "star_graph_07_lens_search_init.js",
       "role": "观察镜头、图例、空态、筛选、搜索与事件绑定"
+    },
+    {
+      "file": "star_graph_08_settings.js",
+      "role": "设置面板：更新、外观主题、笔记、接入智能体"
     }
   ]
 }

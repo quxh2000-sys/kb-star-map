@@ -9,6 +9,7 @@ import binascii
 import json
 import os
 import re
+import secrets
 import shutil
 import signal
 import socket
@@ -16,6 +17,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import yaml
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -75,6 +77,81 @@ MAINTENANCE_DIRS = {
 def parse_maintenance_route(path: str) -> str | None:
     match = re.fullmatch(r"/api/maintenance/(note|preview|commit)", path)
     return match.group(1) if match else None
+
+
+SETTINGS_FILENAME = "设置.yaml"
+NOTE_OPEN_MODES = ("auto", "obsidian", "system")
+DEFAULT_SETTINGS: dict[str, object] = {
+    "note_open_mode": "auto",      # auto | obsidian | system
+    "agent_write": True,           # 关闭后 /api 只读
+    "agent_token": "",
+    "show_background": False,      # 默认是否展示后台记录
+}
+
+
+def settings_path() -> Path:
+    """设置放在工具自己的安装目录里（与更新配置同级）。
+
+    KB_SETTINGS_PATH 可覆盖：开发目录里直接跑服务时用它，
+    免得把设置写进笔记库。正常安装（~/.kb-star-map）不需要设。
+    """
+    override = os.environ.get("KB_SETTINGS_PATH")
+    if override:
+        return Path(override).expanduser()
+    try:
+        from kb_update import install_root
+        return install_root() / SETTINGS_FILENAME
+    except Exception:                  # noqa: BLE001
+        return Path(__file__).resolve().parent.parent / SETTINGS_FILENAME
+
+
+def _write_settings(data: dict[str, object]) -> None:
+    path = settings_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "# 知识库星图工作台 · 设置（界面里改即可，一般不用手改）\n"
+        f"note_open_mode: {data['note_open_mode']}\n"
+        f"agent_write: {str(bool(data['agent_write'])).lower()}\n"
+        f"show_background: {str(bool(data['show_background'])).lower()}\n"
+        f'agent_token: "{data["agent_token"]}"\n',
+        encoding="utf-8",
+    )
+
+
+def load_settings() -> dict[str, object]:
+    data = dict(DEFAULT_SETTINGS)
+    path = settings_path()
+    if path.exists():
+        try:
+            parsed = yaml.safe_load(path.read_text(encoding="utf-8-sig")) or {}
+            if isinstance(parsed, dict):
+                data.update({k: v for k, v in parsed.items() if k in DEFAULT_SETTINGS})
+        except Exception:              # noqa: BLE001 - 配置坏了不该让服务起不来
+            pass
+    if not data.get("agent_token"):
+        # 注意用 _write_settings 而不是 save_settings：
+        # save_settings 会回调 load_settings，那样会无限递归。
+        data["agent_token"] = secrets.token_hex(16)
+        _write_settings(data)
+    return data
+
+
+def save_settings(updates: dict[str, object]) -> dict[str, object]:
+    data = load_settings()
+    for key, value in updates.items():
+        if key not in DEFAULT_SETTINGS:
+            continue
+        if key == "note_open_mode" and value not in NOTE_OPEN_MODES:
+            continue
+        if key in ("agent_write", "show_background"):
+            value = bool(value)
+        if key == "agent_token":
+            value = str(value).strip()
+            if not value:
+                continue
+        data[key] = value
+    _write_settings(data)
+    return data
 
 
 def reload_token(dashboard_dir: Path) -> str:
@@ -194,11 +271,18 @@ def open_with_system_default(target: str) -> None:
         subprocess.run(["xdg-open", target], check=True, timeout=10)
 
 
-def open_note(vault: Path, note_path: Path) -> str:
-    """打开笔记，返回实际使用的打开方式（obsidian / default）。"""
-    if obsidian_available():
+def open_note(vault: Path, note_path: Path, mode: str = "auto") -> str:
+    """打开笔记，返回实际使用的打开方式（obsidian / default）。
+
+    mode 来自设置：auto 有 Obsidian 就用；obsidian 强制走 Obsidian；
+    system 一律用系统默认程序。
+    """
+    wants_obsidian = mode == "obsidian" or (mode == "auto" and obsidian_available())
+    if wants_obsidian and obsidian_available():
         open_with_system_default(build_obsidian_uri(note_path))
         return "obsidian"
+    if mode == "obsidian":
+        raise RuntimeError("设置了「总是用 Obsidian」，但这台机器上没检测到 Obsidian。")
     open_with_system_default(str(note_path.resolve()))
     return "default"
 
@@ -232,7 +316,7 @@ def _json_bytes(payload: dict) -> bytes:
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
 
 
-def make_handler(vault: Path, dashboard_dir: Path, handoff_dir: Path | None = None):
+def make_handler(vault: Path, dashboard_dir: Path, handoff_dir: Path | None = None, port: int = DEFAULT_PORT):
     store = operations_store(dashboard_dir)
     handoff_root = (handoff_dir or default_handoff_dir()).resolve()
 
@@ -274,6 +358,42 @@ def make_handler(vault: Path, dashboard_dir: Path, handoff_dir: Path | None = No
                 raise ValueError("请求内容必须是JSON对象")
             return payload
 
+        def _serve_dashboard(self) -> None:
+            """送出页面时把运行时配置（含访问令牌）注入进去。
+
+            令牌只出现在同源页面里：跨站脚本无法读取响应体（CORS），
+            所以拿不到令牌就写不了。这也是「智能体写入」开关能做判断的前提。
+            """
+            page = dashboard_dir / DASHBOARD_HTML_NAME
+            try:
+                html = page.read_text(encoding="utf-8")
+            except OSError:
+                self.send_error(404, "dashboard not found")
+                return
+            current = load_settings()
+            runtime = json.dumps({
+                "mode": "local",
+                "service": f"http://127.0.0.1:{port}",
+                "vault": str(vault),
+                "token": current["agent_token"],
+                "settings": {
+                    "note_open_mode": current["note_open_mode"],
+                    "agent_write": bool(current["agent_write"]),
+                    "show_background": bool(current["show_background"]),
+                },
+            }, ensure_ascii=False)
+            html = re.sub(
+                r'<script id="kb-runtime">.*?</script>',
+                '<script id="kb-runtime">window.__KB_RUNTIME__ = ' + runtime + ';</script>',
+                html, count=1, flags=re.S,
+            )
+            body = html.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
         def do_GET(self):
             parsed = urlparse(self.path)
             if parsed.path == "/api/status":
@@ -281,6 +401,20 @@ def make_handler(vault: Path, dashboard_dir: Path, handoff_dir: Path | None = No
                 return
             if parsed.path == "/api/version":
                 self._send_json(200, {"ok": True, "token": reload_token(dashboard_dir)})
+                return
+            if parsed.path == "/api/settings":
+                current = load_settings()
+                self._send_json(200, {
+                    "ok": True,
+                    "settings": {
+                        "note_open_mode": current["note_open_mode"],
+                        "agent_write": bool(current["agent_write"]),
+                        "show_background": bool(current["show_background"]),
+                    },
+                    "agent_token": current["agent_token"],
+                    "service": f"http://127.0.0.1:{port}",
+                    "vault": str(vault),
+                })
                 return
             if parsed.path == "/api/operations/current":
                 self._send_json(200, {"ok": True, "task": latest_task(store)})
@@ -320,6 +454,9 @@ def make_handler(vault: Path, dashboard_dir: Path, handoff_dir: Path | None = No
                     download_name=f"operation-{task['id'][:8]}.json",
                 )
                 return
+            if unquote(parsed.path) == "/" + DASHBOARD_HTML_NAME:
+                self._serve_dashboard()
+                return
             if parsed.path == "/":
                 self.send_response(302)
                 self.send_header("Location", "/" + quote(DASHBOARD_HTML_NAME))
@@ -329,6 +466,18 @@ def make_handler(vault: Path, dashboard_dir: Path, handoff_dir: Path | None = No
 
         def do_POST(self):
             path = urlparse(self.path).path
+            # 写操作一律要令牌：跨站脚本发得出请求，但读不到响应体，
+            # 也就拿不到注入在页面里的令牌。
+            current = load_settings()
+            if self.headers.get("X-KB-Token", "") != current["agent_token"]:
+                self._send_json(403, {"ok": False, "message": "缺少或错误的访问令牌，已拒绝写入"})
+                return
+            # 关掉「允许智能体写入」后，只放行浏览器界面自己的同源请求
+            origin = self.headers.get("Origin", "")
+            same_origin = origin in (f"http://127.0.0.1:{port}", f"http://localhost:{port}")
+            if not same_origin and not current["agent_write"]:
+                self._send_json(403, {"ok": False, "message": "已关闭智能体写入，只能在界面里操作"})
+                return
             try:
                 payload = self._read_json()
                 maintenance_route = parse_maintenance_route(path)
@@ -382,7 +531,7 @@ def make_handler(vault: Path, dashboard_dir: Path, handoff_dir: Path | None = No
                     return
                 if path == "/api/open-note":
                     note_path = resolve_note_path(vault, str(payload.get("path", "")))
-                    opened_with = open_note(vault, note_path)
+                    opened_with = open_note(vault, note_path, str(load_settings()["note_open_mode"]))
                     self._send_json(
                         200,
                         {
@@ -391,6 +540,17 @@ def make_handler(vault: Path, dashboard_dir: Path, handoff_dir: Path | None = No
                             "openedWith": opened_with,
                         },
                     )
+                    return
+                if path == "/api/settings":
+                    updated = save_settings(payload if isinstance(payload, dict) else {})
+                    self._send_json(200, {
+                        "ok": True,
+                        "settings": {
+                            "note_open_mode": updated["note_open_mode"],
+                            "agent_write": bool(updated["agent_write"]),
+                            "show_background": bool(updated["show_background"]),
+                        },
+                    })
                     return
                 if path == "/api/update":
                     action = str(payload.get("action") or "check")
@@ -557,6 +717,7 @@ def run_server(
         vault.resolve(),
         dashboard_dir.resolve(),
         handoff_dir.resolve() if handoff_dir else None,
+        port,
     )
     server = ThreadingHTTPServer((host, port), handler)
     try:

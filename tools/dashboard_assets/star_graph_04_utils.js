@@ -29,17 +29,28 @@ globalThis.KBStarGraph = globalThis.KBStarGraph || {};
       toast("分享模式已复制路径；请使用本地管理模式打开笔记");
       return;
     }
-    const response = await fetch("/api/open-note", {method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({path})});
+    const response = await fetch("/api/open-note", withToken({method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({path})}));
     const result = await response.json();
     if (!response.ok || !result.ok) throw new Error(result.message || "无法打开笔记");
     toast(result.openedWith === "obsidian" ? "已在Obsidian中打开对应笔记" : "已用系统默认程序打开该笔记");
   }
 
+  // 写操作要带访问令牌：服务端只把它注入到同源页面里，
+  // 跨站脚本发得出请求却读不到页面，也就拿不到令牌。
+  function withToken(options = {}) {
+    const runtime = globalThis.__KB_RUNTIME__ || {};
+    const token = runtime.token;
+    if (!token) return options;
+    return Object.assign({}, options, {
+      headers: Object.assign({"X-KB-Token": token}, options.headers || {}),
+    });
+  }
+
   async function requestJson(url, options = {}) {
-    const response = await fetch(url, options);
+    const response = await fetch(url, withToken(options));
     const result = await response.json();
     if (!response.ok || !result.ok) throw new Error(result.message || "运营任务请求失败");
     return result;
   }
-  Object.assign(G, { copyText, toast, openInObsidian, requestJson });
+  Object.assign(G, { copyText, toast, openInObsidian, requestJson, withToken });
 })();
